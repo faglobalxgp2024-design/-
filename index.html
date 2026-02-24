@@ -113,9 +113,10 @@
       background: rgba(0,0,0,.18);
       box-shadow: 0 20px 70px rgba(0,0,0,.45);
       width:100%;
-      /* keep 16:9 but fill vertical space better */
-      aspect-ratio: 16/9;
-      max-height: calc(92svh - 88px);
+      aspect-ratio: 16/9;             /* ✅ 항상 16:9 유지 */
+      max-height: calc(92svh - 88px); /* ✅ 상단바 고려 */
+      display:grid;
+      place-items:center;
     }
     canvas{
       width:100%;
@@ -123,6 +124,7 @@
       display:block;
       touch-action: none;
       background: #070a10;
+      image-rendering: auto;
     }
 
     .overlay{
@@ -192,9 +194,11 @@
     .actions .left{display:flex; gap:10px; flex-wrap:wrap}
     .note{ color: rgba(255,255,255,.58); font-size:12px; font-weight:800; }
 
-    /* ✅ Mobile: full-screen 느낌 + 버튼/칩 크기 줄이기 */
+    /* ✅ Mobile: 늘어짐 방지 + 안전영역 + 풀스크린 느낌 */
     @media (max-width: 720px){
-      body{padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);}
+      body{
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      }
       .wrap{
         width:100vw;
         height:100svh;
@@ -225,10 +229,9 @@
         border-radius:12px;
       }
       .stage{
-        border-radius:18px;
-        max-height:none;
-        height: calc(100svh - 86px);
-        aspect-ratio: auto;
+        max-height: none;
+        height: calc(100svh - 96px);  /* ✅ 상단바 높이 고려 */
+        aspect-ratio: 16/9;           /* ✅ 모바일에서도 고정 */
       }
       .card{padding:16px 14px}
       .title{font-size:18px}
@@ -258,7 +261,7 @@
       </div>
     </div>
 
-    <div class="stage">
+    <div class="stage" id="stage">
       <canvas id="game" width="960" height="540"></canvas>
 
       <div class="overlay" id="overlay">
@@ -285,7 +288,8 @@
 (() => {
   // ===== DOM =====
   const canvas = document.getElementById("game");
-  const ctx = canvas.getContext("2d");
+  const stageEl = document.getElementById("stage");
+  const ctx = canvas.getContext("2d", { alpha: true, desynchronized: true });
 
   const timeText = document.getElementById("timeText");
   const scoreText = document.getElementById("scoreText");
@@ -306,17 +310,65 @@
   const diffButtons = [...document.querySelectorAll(".chip")];
 
   // ===== Utils =====
-  const W = canvas.width;
-  const H = canvas.height;
+  let W = canvas.width;
+  let H = canvas.height;
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
 
-  // playfield
-  const TOP = 88;
-  const BOTTOM = H - 108;
-  const LEFT = 26;
-  const RIGHT = W - 26;
+  // playfield (will recompute on resize)
+  let TOP = 88;
+  let BOTTOM = H - 108;
+  let LEFT = 26;
+  let RIGHT = W - 26;
+
+  // ✅ DPR-resize: 모바일에서 뿌옇거나 늘어지는 느낌 제거 + 입력 좌표 정확
+  function resizeCanvasToStage(){
+    const rect = stageEl.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(2.25, window.devicePixelRatio || 1)); // 과도한 dpr 제한
+    const targetW = Math.max(320, Math.round(rect.width * dpr));
+    const targetH = Math.max(180, Math.round(rect.height * dpr));
+
+    if (canvas.width !== targetW || canvas.height !== targetH){
+      canvas.width = targetW;
+      canvas.height = targetH;
+      W = canvas.width;
+      H = canvas.height;
+
+      // playfield 갱신
+      TOP = Math.round(H * 0.16);
+      BOTTOM = Math.round(H * 0.80);
+      LEFT = Math.round(W * 0.03);
+      RIGHT = Math.round(W * 0.97);
+
+      // 플레이어 위치도 화면 비율에 맞게 재배치
+      player.x = W * 0.5;
+      player.y = H * 0.86;
+
+      // 배경 재생성
+      bgCanvas.width = W;
+      bgCanvas.height = H;
+      buildBackground();
+    }
+  }
+  window.addEventListener("resize", () => resizeCanvasToStage(), { passive: true });
+
+  function drawRoundedRect(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function canvasToLocal(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = (clientX - rect.left) / rect.width;
+    const sy = (clientY - rect.top) / rect.height;
+    return { x: sx * W, y: sy * H };
+  }
 
   // ===== Stable RNG (배경 고정) =====
   function mulberry32(seed){
@@ -388,7 +440,7 @@
   setDifficulty("EASY");
 
   // ===== Best =====
-  const BEST_KEY = "xgp_crossbow_best_v7";
+  const BEST_KEY = "xgp_crossbow_best_v8";
   let best = Number(localStorage.getItem(BEST_KEY) || 0);
 
   // ===== Assets (embedded SVG) =====
@@ -399,77 +451,108 @@
     return img;
   }
 
+  // ✅ 더 멋진 “올우드(회색 금속 느낌 최소화)” 석궁
   const crossbowImg = svgToImg(`
-  <svg xmlns="http://www.w3.org/2000/svg" width="560" height="320" viewBox="0 0 560 320">
+  <svg xmlns="http://www.w3.org/2000/svg" width="720" height="420" viewBox="0 0 720 420">
     <defs>
-      <linearGradient id="wood" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#7a4a23"/>
-        <stop offset="0.5" stop-color="#5f3416"/>
-        <stop offset="1" stop-color="#2b1408"/>
+      <linearGradient id="woodA" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#a76b35"/>
+        <stop offset="0.45" stop-color="#7a4520"/>
+        <stop offset="1" stop-color="#3b1d0b"/>
       </linearGradient>
-      <linearGradient id="metal" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="#f0f3f7"/>
-        <stop offset="0.25" stop-color="#9aa8b8"/>
-        <stop offset="0.6" stop-color="#e6eef7"/>
-        <stop offset="1" stop-color="#5c6a7a"/>
+      <linearGradient id="woodB" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#d59a5a"/>
+        <stop offset="0.35" stop-color="#9b5a2a"/>
+        <stop offset="1" stop-color="#5a2a10"/>
       </linearGradient>
-      <radialGradient id="glow" cx="35%" cy="35%" r="80%">
-        <stop offset="0" stop-color="#ffffff" stop-opacity="0.65"/>
-        <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.18"/>
+      <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#fff3c8"/>
+        <stop offset="0.35" stop-color="#ffd54a"/>
+        <stop offset="1" stop-color="#c57a00"/>
+      </linearGradient>
+      <radialGradient id="shine" cx="30%" cy="25%" r="70%">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/>
+        <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.16"/>
         <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
       </radialGradient>
-      <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
-        <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#000" flood-opacity="0.45"/>
+      <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+        <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity="0.45"/>
       </filter>
     </defs>
-    <g filter="url(#shadow)" transform="translate(20,20)">
-      <path d="M220 195 C180 240,165 270,180 285 C205 305,250 280,280 250 C312 218,326 202,350 200
-               C375 198,395 214,410 210 C430 205,450 185,445 165
-               C438 140,400 135,380 150 C360 165,340 160,320 142
-               C290 115,252 135,240 150 C232 160,231 178,220 195 Z"
-            fill="url(#wood)" stroke="#1b0d06" stroke-width="6" />
-      <path d="M245 215 C215 250,205 272,215 282 C235 296,265 275,290 250" fill="none" stroke="#c88954" stroke-opacity="0.35" stroke-width="8" stroke-linecap="round"/>
-      <path d="M330 170 C350 190,382 192,408 174" fill="none" stroke="#e2b083" stroke-opacity="0.22" stroke-width="7" stroke-linecap="round"/>
 
-      <path d="M270 86 L440 160 L418 190 L246 118 Z" fill="url(#metal)" stroke="#2b3440" stroke-width="6" />
-      <path d="M280 98 L420 166" stroke="#ffffff" stroke-opacity="0.28" stroke-width="8" stroke-linecap="round"/>
+    <g filter="url(#sh)" transform="translate(26,24)">
+      <!-- body -->
+      <path d="M270 250
+               C225 305,212 352,236 370
+               C270 392,330 350,360 318
+               C400 274,412 260,438 258
+               C470 255,500 278,522 270
+               C552 258,572 230,564 206
+               C552 168,502 164,478 186
+               C458 204,436 196,412 176
+               C368 140,318 170,300 192
+               C288 206,286 230,270 250 Z"
+            fill="url(#woodA)" stroke="#1a0c05" stroke-width="8" />
 
-      <rect x="265" y="132" width="62" height="56" rx="10" fill="#2b3440" stroke="#141a22" stroke-width="6"/>
-      <path d="M300 170 C295 190,305 205,324 210" fill="none" stroke="#0c1016" stroke-width="8" stroke-linecap="round"/>
+      <!-- inlay -->
+      <path d="M302 232 C275 272,266 342,296 360"
+            fill="none" stroke="rgba(255,235,200,.28)" stroke-width="10" stroke-linecap="round"/>
 
-      <path d="M90 70 C175 65,235 92,260 110" fill="none" stroke="#2a2a2a" stroke-width="22" stroke-linecap="round"/>
-      <path d="M90 70 C175 65,235 92,260 110" fill="none" stroke="url(#metal)" stroke-opacity="0.55" stroke-width="10" stroke-linecap="round"/>
+      <!-- stock rail -->
+      <path d="M310 120 L560 210 L534 250 L286 158 Z"
+            fill="url(#woodB)" stroke="#241107" stroke-width="8" />
 
-      <path d="M110 240 C185 210,230 165,260 110" fill="none" stroke="#2a2a2a" stroke-width="22" stroke-linecap="round"/>
-      <path d="M110 240 C185 210,230 165,260 110" fill="none" stroke="url(#metal)" stroke-opacity="0.55" stroke-width="10" stroke-linecap="round"/>
+      <!-- trigger housing (dark wood) -->
+      <rect x="308" y="172" width="82" height="74" rx="14"
+            fill="#2a1408" stroke="#140903" stroke-width="8"/>
+      <path d="M348 220 C342 246,360 270,384 278"
+            fill="none" stroke="#0c0502" stroke-width="10" stroke-linecap="round"/>
 
-      <path d="M96 70 L114 240" stroke="#f6f7fb" stroke-opacity="0.82" stroke-width="4" stroke-linecap="round"/>
-      <path d="M96 70 L114 240" stroke="#000" stroke-opacity="0.18" stroke-width="7" stroke-linecap="round"/>
+      <!-- bow arms -->
+      <path d="M88 92 C210 80,290 120,326 148"
+            fill="none" stroke="#2b1408" stroke-width="26" stroke-linecap="round"/>
+      <path d="M96 92 C214 84,288 122,326 148"
+            fill="none" stroke="rgba(255,235,200,.18)" stroke-width="10" stroke-linecap="round"/>
 
-      <path d="M250 112 L458 182" stroke="#fff3d7" stroke-width="8" stroke-linecap="round"/>
-      <path d="M450 180 L490 195" stroke="#2ef2c2" stroke-width="10" stroke-linecap="round"/>
-      <path d="M462 186 L505 172 L505 214 Z" fill="#ffd54a" stroke="#8a4f00" stroke-width="6"/>
+      <path d="M120 320 C224 280,284 214,326 148"
+            fill="none" stroke="#2b1408" stroke-width="26" stroke-linecap="round"/>
+      <path d="M128 320 C226 282,284 216,326 148"
+            fill="none" stroke="rgba(255,235,200,.16)" stroke-width="10" stroke-linecap="round"/>
 
-      <ellipse cx="320" cy="140" rx="210" ry="160" fill="url(#glow)"/>
+      <!-- string -->
+      <path d="M102 92 L126 320" stroke="rgba(255,245,220,.95)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M102 92 L126 320" stroke="rgba(0,0,0,.22)" stroke-width="7" stroke-linecap="round"/>
+
+      <!-- bolt -->
+      <path d="M324 150 L586 236" stroke="rgba(255,245,220,.95)" stroke-width="10" stroke-linecap="round"/>
+      <path d="M560 228 L624 250" stroke="rgba(46,242,194,.95)" stroke-width="12" stroke-linecap="round"/>
+      <path d="M588 238 L652 218 L652 280 Z" fill="url(#gold)" stroke="#4a2300" stroke-width="8"/>
+
+      <!-- gold details -->
+      <circle cx="404" cy="214" r="10" fill="url(#gold)" stroke="#4a2300" stroke-width="6"/>
+      <circle cx="468" cy="236" r="10" fill="url(#gold)" stroke="#4a2300" stroke-width="6"/>
+
+      <!-- gloss -->
+      <ellipse cx="420" cy="190" rx="300" ry="220" fill="url(#shine)"/>
     </g>
   </svg>`);
 
   const starImg = svgToImg(`
-  <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 128 128">
     <defs>
       <radialGradient id="g" cx="35%" cy="30%" r="80%">
-        <stop offset="0" stop-color="#fff8da"/>
+        <stop offset="0" stop-color="#fffbe6"/>
         <stop offset="0.38" stop-color="#ffd54a"/>
-        <stop offset="1" stop-color="#f7b200"/>
+        <stop offset="1" stop-color="#f0a800"/>
       </radialGradient>
       <filter id="s" x="-30%" y="-30%" width="160%" height="160%">
-        <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000" flood-opacity="0.35"/>
+        <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#000" flood-opacity="0.40"/>
       </filter>
     </defs>
     <g filter="url(#s)">
-      <path d="M64 10 L77 46 L116 46 L84 68 L96 106 L64 84 L32 106 L44 68 L12 46 L51 46 Z"
-            fill="url(#g)" stroke="#fff1b8" stroke-opacity="0.85" stroke-width="4" />
-      <path d="M50 44 C58 32,78 32,86 44" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="6" stroke-linecap="round"/>
+      <path d="M64 10 L78 46 L118 46 L86 70 L98 110 L64 86 L30 110 L42 70 L10 46 L50 46 Z"
+            fill="url(#g)" stroke="rgba(255,245,210,0.92)" stroke-width="5" />
+      <path d="M50 44 C58 32,78 32,86 44" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="7" stroke-linecap="round"/>
     </g>
   </svg>`);
 
@@ -481,7 +564,7 @@
   let score = 0;
   let remaining = DIFF[difficulty].time;
 
-  const player = { x: W / 2, y: H - 92, r: 18 };
+  const player = { x: W / 2, y: H * 0.86, r: 18 };
   const aim = { angle: -Math.PI / 2, smooth: -Math.PI / 2 };
 
   let arrows = [];
@@ -497,22 +580,6 @@
 
   // ===== Helpers =====
   function rnd(min, max) { return min + Math.random() * (max - min); }
-  function drawRoundedRect(x, y, w, h, r) {
-    r = Math.min(r, w / 2, h / 2);
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
-  }
-  function canvasToLocal(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    const sx = (clientX - rect.left) / rect.width;
-    const sy = (clientY - rect.top) / rect.height;
-    return { x: sx * W, y: sy * H };
-  }
   function updateAimFromPointer(clientX, clientY) {
     const p = canvasToLocal(clientX, clientY);
     const dx = p.x - player.x;
@@ -561,289 +628,183 @@
     });
   }
 
-  // ===== Cached Background (✅ 회색 구덩이 제거 + 고급 잔디) =====
+  // ===== Cached Background (✅ 나무숲 + 잔디 업그레이드, 깔끔) =====
   const bgCanvas = document.createElement("canvas");
   bgCanvas.width = W;
   bgCanvas.height = H;
   const bg = bgCanvas.getContext("2d");
 
   function buildBackground(){
-    // sky
+    bg.setTransform(1,0,0,1,0,0);
+    bg.clearRect(0,0,W,H);
+
+    // sky canopy
     const sky = bg.createLinearGradient(0,0,0,H);
-    sky.addColorStop(0, "#6fb3ff");
-    sky.addColorStop(0.22, "#97d5ff");
-    sky.addColorStop(0.52, "#7cc7ff");
-    sky.addColorStop(1, "#142236");
+    sky.addColorStop(0, "#0b2b1d");
+    sky.addColorStop(0.35, "#0b1e26");
+    sky.addColorStop(0.75, "#07101a");
+    sky.addColorStop(1, "#05070d");
     bg.fillStyle = sky;
     bg.fillRect(0,0,W,H);
 
-    // soft haze
-    bg.fillStyle = "rgba(255,255,255,0.05)";
-    bg.fillRect(0, 0, W, H);
+    // mist
+    const mist = bg.createRadialGradient(W*0.52, H*0.18, 10, W*0.52, H*0.22, Math.max(W,H)*0.55);
+    mist.addColorStop(0, "rgba(220,255,235,0.10)");
+    mist.addColorStop(0.55, "rgba(160,220,255,0.06)");
+    mist.addColorStop(1, "rgba(0,0,0,0)");
+    bg.fillStyle = mist;
+    bg.fillRect(0,0,W,H);
 
-    function roundRect(g, x,y,w,h,r){
-      g.beginPath();
-      g.moveTo(x+r, y);
-      g.arcTo(x+w, y, x+w, y+h, r);
-      g.arcTo(x+w, y+h, x, y+h, r);
-      g.arcTo(x, y+h, x, y, r);
-      g.arcTo(x, y, x+w, y, r);
-      g.closePath();
-    }
-
-    // walls
-    function wall(side){
-      const x0 = side==="L" ? -20 : W-200;
-      const ww = 240;
+    // distant trees (layer 1)
+    function drawTreeLayer(yBase, alpha, count, hueShift=0){
       bg.save();
-      bg.translate(x0, 40);
+      bg.globalAlpha = alpha;
+      for(let i=0;i<count;i++){
+        const x = bgRand()*W;
+        const y = yBase + bgRand()* (H*0.22);
+        const h = 140 + bgRand()*260;
+        const w = 22 + bgRand()*40;
 
-      const g = bg.createLinearGradient(0,0,ww,0);
-      g.addColorStop(0, side==="L" ? "#3a3f46" : "#4a4f56");
-      g.addColorStop(1, side==="L" ? "#21252b" : "#2a2e35");
-      bg.fillStyle = g;
-      roundRect(bg, 0,0,ww,H-80,18);
-      bg.fill();
-
-      // bricks
-      bg.globalAlpha = 0.22;
-      bg.fillStyle = "rgba(255,255,255,0.9)";
-      for(let yy=18; yy<H-120; yy+=22){
-        for(let xx=10; xx<ww-10; xx+=46){
-          const off = ((yy/22)|0)%2 ? 18 : 0;
-          bg.fillRect(xx+off, yy, 38, 10);
-        }
-      }
-      bg.globalAlpha = 1;
-
-      // vines (fixed)
-      bg.globalAlpha = 0.95;
-      bg.fillStyle = "rgba(86,170,88,0.55)";
-      for(let i=0;i<14;i++){
-        const vx = 22 + bgRand()*(ww-44);
-        const vy = 30 + bgRand()*(H-220);
-        const rr = 10 + bgRand()*12;
+        // trunk
+        bg.fillStyle = `rgba(${20+hueShift}, ${24+hueShift}, ${18}, 0.75)`;
         bg.beginPath();
-        bg.ellipse(vx, vy, rr*1.1, rr*0.7, (bgRand()*2-1), 0, Math.PI*2);
+        bg.ellipse(x, y, w*0.35, h*0.48, 0, 0, Math.PI*2);
+        bg.fill();
+
+        // canopy blob
+        const rx = 70 + bgRand()*130;
+        const ry = 50 + bgRand()*110;
+        const g = bg.createRadialGradient(x-rx*0.15, y-h*0.45, 10, x, y-h*0.45, Math.max(rx,ry));
+        g.addColorStop(0, "rgba(70,150,105,0.55)");
+        g.addColorStop(1, "rgba(10,30,22,0)");
+        bg.fillStyle = g;
+        bg.beginPath();
+        bg.ellipse(x, y-h*0.55, rx, ry, (bgRand()*0.8-0.4), 0, Math.PI*2);
         bg.fill();
       }
       bg.restore();
     }
-    wall("L"); wall("R");
+    drawTreeLayer(H*0.05, 0.55, 22, 0);
+    drawTreeLayer(H*0.10, 0.42, 18, 6);
 
-    // ✅ Premium grass base (no gray pit)
-    const groundY = H*0.52;
+    // light shafts (fixed)
+    bg.save();
+    bg.globalAlpha = 0.12;
+    for(let i=0;i<8;i++){
+      const x = bgRand()*W;
+      const w = 90 + bgRand()*140;
+      const grad = bg.createLinearGradient(x, 0, x+w, H);
+      grad.addColorStop(0, "rgba(255,255,230,0)");
+      grad.addColorStop(0.5, "rgba(255,255,230,0.40)");
+      grad.addColorStop(1, "rgba(255,255,230,0)");
+      bg.fillStyle = grad;
+      bg.beginPath();
+      bg.moveTo(x, 0);
+      bg.lineTo(x+w, 0);
+      bg.lineTo(x+w*0.62, H);
+      bg.lineTo(x-w*0.08, H);
+      bg.closePath();
+      bg.fill();
+    }
+    bg.restore();
+
+    // ground
+    const groundY = H*0.50;
     const g0 = bg.createLinearGradient(0, groundY, 0, H);
-    g0.addColorStop(0, "#2fa45a");
-    g0.addColorStop(0.35, "#1f7a42");
-    g0.addColorStop(0.75, "#155b31");
-    g0.addColorStop(1, "#0f4124");
+    g0.addColorStop(0, "#1fa45a");
+    g0.addColorStop(0.35, "#187a45");
+    g0.addColorStop(0.75, "#0e4b2c");
+    g0.addColorStop(1, "#09321e");
     bg.fillStyle = g0;
     bg.fillRect(0, groundY, W, H-groundY);
 
     // grass texture (fixed)
     bg.save();
-    bg.globalAlpha = 0.20;
-    for(let i=0;i<1200;i++){
+    bg.globalAlpha = 0.22;
+    for(let i=0;i<1400;i++){
       const x = bgRand()*W;
       const y = groundY + bgRand()*(H-groundY);
-      const h = 6 + bgRand()*22;
+      const h = 5 + bgRand()*26;
       const w = 1 + bgRand()*2;
-      bg.fillStyle = (i%3===0) ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.25)";
+      bg.fillStyle = (i%4===0) ? "rgba(255,255,255,0.28)" : "rgba(0,0,0,0.22)";
       bg.fillRect(x, y, w, h);
     }
     bg.restore();
 
-    // grass clumps (fixed)
+    // foreground bushes
     bg.save();
-    bg.globalAlpha = 0.25;
-    for(let i=0;i<60;i++){
+    bg.globalAlpha = 0.22;
+    for(let i=0;i<26;i++){
       const x = bgRand()*W;
-      const y = groundY + bgRand()*(H-groundY);
-      const rx = 18 + bgRand()*28;
-      const ry = 10 + bgRand()*18;
-      bg.fillStyle = (i%2===0) ? "rgba(0,0,0,0.24)" : "rgba(255,255,255,0.16)";
+      const y = groundY + bgRand()*(H-groundY)*0.55;
+      const rx = 50 + bgRand()*120;
+      const ry = 24 + bgRand()*70;
+      const gg = bg.createRadialGradient(x-rx*0.15, y-ry*0.2, 10, x, y, Math.max(rx,ry));
+      gg.addColorStop(0, "rgba(110,200,140,0.65)");
+      gg.addColorStop(1, "rgba(10,30,22,0)");
+      bg.fillStyle = gg;
       bg.beginPath();
-      bg.ellipse(x, y, rx, ry, bgRand()*1.2, 0, Math.PI*2);
+      bg.ellipse(x, y, rx, ry, bgRand()*1.0, 0, Math.PI*2);
       bg.fill();
     }
     bg.restore();
 
-    // subtle dirt path (still ok)
+    // subtle foreground shade
     bg.save();
-    bg.translate(W*0.5, H*0.56);
-    bg.beginPath();
-    bg.moveTo(-120, H*0.42);
-    bg.lineTo(120, H*0.42);
-    bg.lineTo(210, -40);
-    bg.lineTo(-210, -40);
-    bg.closePath();
-
-    const p = bg.createLinearGradient(0,-70,0,H*0.45);
-    p.addColorStop(0, "rgba(120,110,98,0.88)");
-    p.addColorStop(0.6, "rgba(78,72,66,0.92)");
-    p.addColorStop(1, "rgba(40,36,34,0.94)");
-    bg.fillStyle = p;
-    bg.fill();
-
-    // stones fixed
-    bg.clip();
-    bg.globalAlpha = 0.30;
-    bg.fillStyle = "rgba(255,255,255,0.9)";
-    for(let i=0;i<120;i++){
-      const x = -200 + bgRand()*400;
-      const y = -50 + bgRand()*(H*0.40 + 50);
-      const ww = 14 + bgRand()*18;
-      const hh = 10 + bgRand()*12;
-      bg.fillRect(x, y, ww, hh);
-    }
-    bg.globalAlpha = 1;
-    bg.restore();
-
-    // target stand
-    bg.save();
-    bg.translate(W*0.5, H*0.21);
-
-    bg.lineWidth = 10;
-    bg.lineCap = "round";
-    bg.strokeStyle = "rgba(114,65,28,0.95)";
-    bg.beginPath();
-    bg.moveTo(-210, 140); bg.lineTo(-210, -30);
-    bg.moveTo( 210, 140); bg.lineTo( 210, -30);
-    bg.stroke();
-
-    bg.lineWidth = 12;
-    bg.strokeStyle = "rgba(86,49,20,0.95)";
-    bg.beginPath();
-    bg.moveTo(-210, 35); bg.lineTo(210, 35);
-    bg.moveTo(-210, 85); bg.lineTo(210, 85);
-    bg.stroke();
-
-    function drawTarget(x,y,s){
-      bg.save();
-      bg.translate(x,y);
-      bg.scale(s,s);
-      bg.shadowColor = "rgba(0,0,0,0.35)";
-      bg.shadowBlur = 10;
-      const rings = [
-        ["#ffffff", 36],
-        ["#ff3b5c", 28],
-        ["#ffffff", 20],
-        ["#ff3b5c", 12],
-        ["#ffd54a", 6],
-      ];
-      for(const [c,r] of rings){
-        bg.fillStyle = c;
-        bg.beginPath();
-        bg.arc(0,0,r,0,Math.PI*2);
-        bg.fill();
-      }
-      bg.shadowBlur = 0;
-      bg.strokeStyle = "rgba(0,0,0,0.25)";
-      bg.lineWidth = 3;
-      bg.beginPath(); bg.arc(0,0,36,0,Math.PI*2); bg.stroke();
-      bg.restore();
-    }
-    const xs = [-120, 0, 120, -60, 60, 0];
-    const ys = [ 35, 35, 35,  85, 85, 85];
-    for(let i=0;i<6;i++) drawTarget(xs[i], ys[i], 0.9);
-    bg.restore();
-
-    // foreground shade
-    bg.save();
-    bg.globalAlpha = 0.12;
-    bg.fillStyle = "rgba(0,0,0,0.55)";
-    bg.fillRect(0, H-110, W, 110);
-    bg.restore();
-
-    // optional rain streaks (fixed positions, not animated -> no flicker)
-    bg.save();
-    bg.globalAlpha = 0.10;
-    bg.strokeStyle = "rgba(255,255,255,0.6)";
-    bg.lineWidth = 2;
-    for(let i=0;i<160;i++){
-      const x = bgRand()*W;
-      const y = bgRand()*H;
-      bg.beginPath();
-      bg.moveTo(x, y);
-      bg.lineTo(x-10, y+18);
-      bg.stroke();
-    }
+    bg.globalAlpha = 0.18;
+    bg.fillStyle = "rgba(0,0,0,0.60)";
+    bg.fillRect(0, H- Math.max(90, H*0.16), W, Math.max(90, H*0.16));
     bg.restore();
   }
 
   function drawVignette(g){
-    const grad = g.createRadialGradient(W*0.5, H*0.45, 80, W*0.5, H*0.5, Math.max(W,H)*0.75);
+    const grad = g.createRadialGradient(W*0.5, H*0.40, 80, W*0.5, H*0.5, Math.max(W,H)*0.78);
     grad.addColorStop(0, "rgba(0,0,0,0)");
-    grad.addColorStop(0.55, "rgba(0,0,0,0.10)");
-    grad.addColorStop(1, "rgba(0,0,0,0.58)");
+    grad.addColorStop(0.60, "rgba(0,0,0,0.08)");
+    grad.addColorStop(1, "rgba(0,0,0,0.62)");
     g.fillStyle = grad;
     g.fillRect(0,0,W,H);
   }
 
   // ===== Coin / Hazard =====
+  // ✅ “동그라미 제거”: 별만 + 글로우만
   function drawStarCoin(x, y, r, spinT = 0) {
-    const wobble = 0.78 + 0.22 * Math.sin(spinT * Math.PI * 2);
-    const rx = r * wobble;
-    const ry = r;
+    const tw = 0.85 + 0.15 * Math.sin(spinT * Math.PI * 2);
+    const size = r * 2.05 * tw;
 
+    // soft glow
     ctx.save();
-    ctx.translate(x, y);
-
-    ctx.globalAlpha = 0.45;
-    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    const g = ctx.createRadialGradient(x, y, r*0.2, x, y, r*2.6);
+    g.addColorStop(0, "rgba(255,213,74,0.35)");
+    g.addColorStop(0.55, "rgba(255,213,74,0.18)");
+    g.addColorStop(1, "rgba(255,213,74,0)");
+    ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.ellipse(4, 7, rx * 1.05, ry * 0.82, 0, 0, Math.PI * 2);
+    ctx.arc(x, y, r*2.6, 0, Math.PI*2);
+    ctx.fill();
+
+    // shadow
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.beginPath();
+    ctx.ellipse(x+4, y+8, r*0.95, r*0.55, 0, 0, Math.PI*2);
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    const g = ctx.createRadialGradient(-rx * 0.35, -ry * 0.35, r * 0.12, 0, 0, r * 1.35);
-    g.addColorStop(0, "rgba(255,252,225,0.98)");
-    g.addColorStop(0.35, "rgba(255,213,74,0.98)");
-    g.addColorStop(0.78, "rgba(255,165,0,0.98)");
-    g.addColorStop(1, "rgba(145,70,0,0.98)");
-    ctx.fillStyle = g;
-    ctx.strokeStyle = "rgba(255,245,210,0.65)";
-    ctx.lineWidth = Math.max(2, r * 0.12);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    const g2 = ctx.createRadialGradient(-rx * 0.18, -ry * 0.18, r * 0.08, 0, 0, r * 0.95);
-    g2.addColorStop(0, "rgba(255,255,238,0.98)");
-    g2.addColorStop(1, "rgba(255,190,20,0.98)");
-    ctx.fillStyle = g2;
-    ctx.strokeStyle = "rgba(70,30,0,0.32)";
-    ctx.lineWidth = Math.max(1, r * 0.06);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, rx * 0.62, ry * 0.62, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.save();
-    ctx.globalAlpha = 0.55;
-    ctx.fillStyle = "rgba(255,245,215,0.85)";
-    for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * Math.PI * 2;
-      ctx.fillRect(Math.cos(a) * rx * 0.78 - 1, Math.sin(a) * ry * 0.78 - 1, 2, 2);
-    }
-    ctx.restore();
-
-    ctx.save();
-    ctx.globalAlpha = 0.16 + 0.25 * (0.5 + 0.5 * Math.sin(spinT * Math.PI * 2));
-    ctx.fillStyle = "rgba(255,255,255,0.95)";
-    ctx.beginPath();
-    ctx.ellipse(-rx * 0.22, -ry * 0.22, rx * 0.20, ry * 0.62, -0.35, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    const s = r * 1.08;
     if (starImg.complete && starImg.naturalWidth) {
-      ctx.save();
-      ctx.globalAlpha = 0.92;
-      ctx.drawImage(starImg, -s/2, -s/2, s, s);
-      ctx.restore();
+      ctx.drawImage(starImg, x - size/2, y - size/2, size, size);
+    } else {
+      // fallback star
+      ctx.translate(x,y);
+      ctx.fillStyle = "rgba(255,213,74,0.98)";
+      ctx.beginPath();
+      for (let i=0;i<10;i++){
+        const ang = -Math.PI/2 + i*Math.PI/5;
+        const rr = (i%2===0) ? r : r*0.45;
+        ctx.lineTo(Math.cos(ang)*rr, Math.sin(ang)*rr);
+      }
+      ctx.closePath();
+      ctx.fill();
     }
     ctx.restore();
   }
@@ -893,7 +854,7 @@
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    ctx.globalAlpha = 0.95;
+    ctx.globalAlpha = 0.92;
     ctx.fillStyle = "rgba(18,22,34,0.62)";
     ctx.beginPath();
     ctx.arc(0, r*0.12, r*0.44, 0, Math.PI*2);
@@ -937,9 +898,9 @@
     hazards = [];
 
     for (let i = 0; i < cfg.coins; i++) {
-      const r = 18 + i * 1.4;
+      const r = Math.round(Math.min(W,H) * 0.035) + i * 1.2;
       const points = i === cfg.coins - 1 ? 55 : (i === 0 ? 12 : 28);
-      const core = 10 + i * 0.8;
+      const core = Math.max(10, r * 0.55);
       coins.push({
         x: rnd(LEFT + r, RIGHT - r),
         y: rnd(TOP + r, BOTTOM - 170),
@@ -952,7 +913,7 @@
     }
 
     for (let i = 0; i < cfg.hazards; i++) {
-      const r = 16 + (i % 3);
+      const r = Math.round(Math.min(W,H) * 0.030) + (i % 3);
       hazards.push({
         x: rnd(LEFT + r, RIGHT - r),
         y: rnd(TOP + r, BOTTOM - 130),
@@ -969,7 +930,7 @@
     if (!running) return;
     if (arrowCooldown > 0) return;
 
-    const power = 1600;
+    const power = Math.max(1500, Math.min(W,H) * 2.7);
     let angle = aim.smooth;
     angle = clamp(angle, -Math.PI + 0.26, -0.23);
 
@@ -978,8 +939,8 @@
     const ay = Math.sin(angle);
 
     arrows.push({
-      x: player.x + ax * 18,
-      y: player.y + ay * 18,
+      x: player.x + ax * (player.r + 2),
+      y: player.y + ay * (player.r + 2),
       vx: ax * sp,
       vy: ay * sp,
       rot: angle,
@@ -996,7 +957,7 @@
     ovTitle.textContent = "XGP 석궁 미니게임";
     ovDesc.innerHTML =
       `파워는 자동(항상 강함)이고 <b>조준만</b> 하면 됩니다.<br/>
-       <span class="gold">별 코인</span>을 맞추면 점수! 중앙(<b>별 엠블럼</b>)을 맞추면 <span class="gold">크리티컬</span>!<br/>
+       <span class="gold">별</span>을 맞추면 점수! 중앙(<b>별 중심</b>)을 맞추면 <span class="gold">크리티컬</span>!<br/>
        <span class="warn">⚠️ 위험 표식</span>을 맞추면 즉시 게임 오버!`;
     ovFinal.style.display = "none";
     startBtn.textContent = "START";
@@ -1250,27 +1211,19 @@
 
     // border
     ctx.save();
-    ctx.strokeStyle = "rgba(255,210,120,0.18)";
-    ctx.lineWidth = 2;
-    drawRoundedRect(LEFT, TOP, RIGHT - LEFT, BOTTOM - TOP, 18);
+    ctx.strokeStyle = "rgba(255,210,120,0.14)";
+    ctx.lineWidth = Math.max(2, Math.min(W,H) * 0.004);
+    drawRoundedRect(LEFT, TOP, RIGHT - LEFT, BOTTOM - TOP, Math.max(14, Math.min(W,H)*0.03));
     ctx.stroke();
     ctx.restore();
 
     // hazards
     for (const h of hazards) drawHazard(h.x, h.y, h.r, h.blink);
 
-    // coins
+    // coins (stars)
     for (const c of coins) {
       const cy = c.y + Math.sin(c.bob) * 2.5;
       drawStarCoin(c.x, cy, c.r, c.spin);
-      ctx.save();
-      ctx.globalAlpha = 0.10;
-      const g = ctx.createRadialGradient(c.x, cy, c.r*0.2, c.x, cy, c.r*2.2);
-      g.addColorStop(0, "rgba(255,213,74,0.7)");
-      g.addColorStop(1, "rgba(255,213,74,0)");
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(c.x, cy, c.r*2.2, 0, Math.PI*2); ctx.fill();
-      ctx.restore();
     }
 
     // popups
@@ -1278,7 +1231,7 @@
       const a = 1 - (s.t / s.life);
       ctx.save();
       ctx.globalAlpha = a;
-      ctx.font = `14px system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial`;
+      ctx.font = `${Math.max(13, Math.round(Math.min(W,H)*0.028))}px system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
@@ -1292,8 +1245,8 @@
 
       if (s.isCrit && starImg.complete && starImg.naturalWidth) {
         ctx.globalAlpha = a * 0.85;
-        const sz = 22;
-        ctx.drawImage(starImg, s.x - sz/2, s.y - 30, sz, sz);
+        const sz = Math.max(18, Math.round(Math.min(W,H)*0.05));
+        ctx.drawImage(starImg, s.x - sz/2, s.y - sz*1.35, sz, sz);
       }
       ctx.restore();
     }
@@ -1373,34 +1326,34 @@
   function drawPlayerAndCrossbow(){
     // player base
     ctx.save();
-    ctx.fillStyle = "rgba(46,242,194,0.18)";
-    ctx.strokeStyle = "rgba(46,242,194,0.55)";
-    ctx.lineWidth = 3;
+    ctx.fillStyle = "rgba(46,242,194,0.16)";
+    ctx.strokeStyle = "rgba(46,242,194,0.52)";
+    ctx.lineWidth = Math.max(2, Math.min(W,H)*0.005);
     ctx.beginPath();
-    ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
+    ctx.arc(player.x, player.y, Math.max(14, Math.min(W,H)*0.03), 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
     ctx.restore();
 
     // aim guide
     const ax = Math.cos(aim.smooth), ay = Math.sin(aim.smooth);
-    const bx = player.x + ax * 70;
-    const by = player.y + ay * 70;
+    const bx = player.x + ax * (Math.min(W,H)*0.12);
+    const by = player.y + ay * (Math.min(W,H)*0.12);
 
     ctx.save();
-    ctx.strokeStyle = "rgba(255,213,74,0.90)";
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(255,213,74,0.88)";
+    ctx.lineWidth = Math.max(2, Math.min(W,H)*0.0045);
     ctx.beginPath();
     ctx.moveTo(player.x, player.y);
     ctx.lineTo(bx, by);
     ctx.stroke();
 
     ctx.globalAlpha = 0.52;
-    ctx.strokeStyle = "rgba(255,243,215,0.40)";
+    ctx.strokeStyle = "rgba(255,243,215,0.36)";
     ctx.setLineDash([7, 7]);
     ctx.beginPath();
     ctx.moveTo(bx, by);
-    ctx.lineTo(bx + ax * 280, by + ay * 280);
+    ctx.lineTo(bx + ax * (Math.min(W,H)*0.46), by + ay * (Math.min(W,H)*0.46));
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
@@ -1410,18 +1363,18 @@
     ctx.translate(player.x, player.y);
     ctx.rotate(aim.smooth);
 
-    ctx.globalAlpha = 0.22;
-    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.globalAlpha = 0.20;
+    ctx.fillStyle = "rgba(0,0,0,0.50)";
     ctx.beginPath();
-    ctx.ellipse(24, 18, 72, 24, 0, 0, Math.PI*2);
+    ctx.ellipse(Math.min(W,H)*0.05, Math.min(W,H)*0.04, Math.min(W,H)*0.12, Math.min(W,H)*0.045, 0, 0, Math.PI*2);
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    const scale = 0.32;
-    const iw = 560 * scale, ih = 320 * scale;
+    const scale = Math.min(W,H) / 1700; // 화면 크기에 따라 자동 스케일
+    const iw = 720 * scale, ih = 420 * scale;
 
     if (crossbowImg.complete && crossbowImg.naturalWidth) {
-      ctx.drawImage(crossbowImg, -iw*0.10, -ih*0.52, iw, ih);
+      ctx.drawImage(crossbowImg, -iw*0.08, -ih*0.52, iw, ih);
     } else {
       ctx.strokeStyle = "rgba(255,213,74,0.92)";
       ctx.lineWidth = 10;
@@ -1434,6 +1387,7 @@
   }
 
   // ===== Init =====
+  resizeCanvasToStage();
   buildBackground();
 
   bestText.textContent = String(best);
