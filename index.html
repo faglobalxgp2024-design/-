@@ -30,7 +30,6 @@
                max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
     }
 
-    /* Desktop default */
     .wrap{
       width:min(980px, 96vw);
       height: min(720px, 92svh);
@@ -113,8 +112,8 @@
       background: rgba(0,0,0,.18);
       box-shadow: 0 20px 70px rgba(0,0,0,.45);
       width:100%;
-      aspect-ratio: 16/9;             /* ✅ 항상 16:9 유지 */
-      max-height: calc(92svh - 88px); /* ✅ 상단바 고려 */
+      aspect-ratio: 16/9;
+      max-height: calc(92svh - 88px);
       display:grid;
       place-items:center;
     }
@@ -194,7 +193,6 @@
     .actions .left{display:flex; gap:10px; flex-wrap:wrap}
     .note{ color: rgba(255,255,255,.58); font-size:12px; font-weight:800; }
 
-    /* ✅ Mobile: 늘어짐 방지 + 안전영역 + 풀스크린 느낌 */
     @media (max-width: 720px){
       body{
         padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
@@ -230,8 +228,8 @@
       }
       .stage{
         max-height: none;
-        height: calc(100svh - 96px);  /* ✅ 상단바 높이 고려 */
-        aspect-ratio: 16/9;           /* ✅ 모바일에서도 고정 */
+        height: calc(100svh - 96px);
+        aspect-ratio: 16/9;
       }
       .card{padding:16px 14px}
       .title{font-size:18px}
@@ -262,7 +260,7 @@
     </div>
 
     <div class="stage" id="stage">
-      <canvas id="game" width="960" height="540"></canvas>
+      <canvas id="game"></canvas>
 
       <div class="overlay" id="overlay">
         <div class="card">
@@ -289,7 +287,13 @@
   // ===== DOM =====
   const canvas = document.getElementById("game");
   const stageEl = document.getElementById("stage");
-  const ctx = canvas.getContext("2d", { alpha: true, desynchronized: true });
+
+  // ✅ 갤럭시(특히 삼성 브라우저/크롬) “빤짝임/깨짐” 방지:
+  // - desynchronized 옵션 제거(일부 기기에서 프레임 플리커 유발 사례)
+  // - SVG filter/dropShadow 제거(별/석궁을 캔버스 프리렌더링으로 대체)
+  const ctx = canvas.getContext("2d", { alpha: true });
+
+  ctx.imageSmoothingEnabled = true;
 
   const timeText = document.getElementById("timeText");
   const scoreText = document.getElementById("scoreText");
@@ -310,48 +314,27 @@
   const diffButtons = [...document.querySelectorAll(".chip")];
 
   // ===== Utils =====
-  let W = canvas.width;
-  let H = canvas.height;
+  let W = 960, H = 540;
+  let DPR = 1;
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
 
-  // playfield (will recompute on resize)
-  let TOP = 88;
-  let BOTTOM = H - 108;
-  let LEFT = 26;
-  let RIGHT = W - 26;
+  // playfield
+  let TOP = 88, BOTTOM = H - 108, LEFT = 26, RIGHT = W - 26;
 
-  // ✅ DPR-resize: 모바일에서 뿌옇거나 늘어지는 느낌 제거 + 입력 좌표 정확
-  function resizeCanvasToStage(){
-    const rect = stageEl.getBoundingClientRect();
-    const dpr = Math.max(1, Math.min(2.25, window.devicePixelRatio || 1)); // 과도한 dpr 제한
-    const targetW = Math.max(320, Math.round(rect.width * dpr));
-    const targetH = Math.max(180, Math.round(rect.height * dpr));
-
-    if (canvas.width !== targetW || canvas.height !== targetH){
-      canvas.width = targetW;
-      canvas.height = targetH;
-      W = canvas.width;
-      H = canvas.height;
-
-      // playfield 갱신
-      TOP = Math.round(H * 0.16);
-      BOTTOM = Math.round(H * 0.80);
-      LEFT = Math.round(W * 0.03);
-      RIGHT = Math.round(W * 0.97);
-
-      // 플레이어 위치도 화면 비율에 맞게 재배치
-      player.x = W * 0.5;
-      player.y = H * 0.86;
-
-      // 배경 재생성
-      bgCanvas.width = W;
-      bgCanvas.height = H;
-      buildBackground();
-    }
+  // ===== Stable RNG =====
+  function mulberry32(seed){
+    let a = seed >>> 0;
+    return function(){
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t ^= t + Math.imul(t ^ t >>> 7, 61 | t);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
   }
-  window.addEventListener("resize", () => resizeCanvasToStage(), { passive: true });
+  const bgRand = mulberry32(0xC0FFEE);
+  const fxRand = mulberry32(0xBADA55);
 
   function drawRoundedRect(x, y, w, h, r) {
     r = Math.min(r, w / 2, h / 2);
@@ -363,6 +346,7 @@
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
   }
+
   function canvasToLocal(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     const sx = (clientX - rect.left) / rect.width;
@@ -370,17 +354,47 @@
     return { x: sx * W, y: sy * H };
   }
 
-  // ===== Stable RNG (배경 고정) =====
-  function mulberry32(seed){
-    let a = seed >>> 0;
-    return function(){
-      a |= 0; a = a + 0x6D2B79F5 | 0;
-      let t = Math.imul(a ^ a >>> 15, 1 | a);
-      t ^= t + Math.imul(t ^ t >>> 7, 61 | t);
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
+  // ✅ DPR resize (선명 + 좌표 정확 + 기기별 스케일 플리커 최소화)
+  const bgCanvas = document.createElement("canvas");
+  const bg = bgCanvas.getContext("2d");
+  let bgBuilt = false;
+
+  function resizeCanvasToStage(){
+    const rect = stageEl.getBoundingClientRect();
+
+    // 너무 높은 DPR이 오히려 깜빡임/열/프레임드랍 유발 -> 상한 제한
+    DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+    const targetW = Math.max(320, Math.round(rect.width * DPR));
+    const targetH = Math.max(180, Math.round(rect.height * DPR));
+
+    if (canvas.width !== targetW || canvas.height !== targetH){
+      canvas.width = targetW;
+      canvas.height = targetH;
+
+      W = canvas.width;
+      H = canvas.height;
+
+      TOP = Math.round(H * 0.16);
+      BOTTOM = Math.round(H * 0.80);
+      LEFT = Math.round(W * 0.03);
+      RIGHT = Math.round(W * 0.97);
+
+      player.x = W * 0.5;
+      player.y = H * 0.86;
+
+      // background resize + rebuild
+      bgCanvas.width = W;
+      bgCanvas.height = H;
+      buildBackground();
+      buildStarSkins();  // 스킨도 화면해상도에 맞게 새로 프리렌더
+      bgBuilt = true;
+
+      // 레인/안개 파티클도 스케일에 맞게 다시 세팅
+      initWeather();
+    }
   }
-  const bgRand = mulberry32(0xC0FFEE);
+  window.addEventListener("resize", () => resizeCanvasToStage(), { passive: true });
 
   // ===== Audio (no files) =====
   let audioCtx = null;
@@ -440,18 +454,17 @@
   setDifficulty("EASY");
 
   // ===== Best =====
-  const BEST_KEY = "xgp_crossbow_best_v8";
+  const BEST_KEY = "xgp_crossbow_best_v9";
   let best = Number(localStorage.getItem(BEST_KEY) || 0);
 
-  // ===== Assets (embedded SVG) =====
+  // ===== Crossbow (SVG → bitmap) =====
+  // ✅ 깜빡임 방지 위해 SVG 필터 없이 간단+고급 느낌의 벡터를 "이미지"로 사용
   function svgToImg(svg) {
     const img = new Image();
     img.decoding = "async";
     img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg.trim());
     return img;
   }
-
-  // ✅ 더 멋진 “올우드(회색 금속 느낌 최소화)” 석궁
   const crossbowImg = svgToImg(`
   <svg xmlns="http://www.w3.org/2000/svg" width="720" height="420" viewBox="0 0 720 420">
     <defs>
@@ -471,17 +484,13 @@
         <stop offset="1" stop-color="#c57a00"/>
       </linearGradient>
       <radialGradient id="shine" cx="30%" cy="25%" r="70%">
-        <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/>
-        <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.16"/>
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.38"/>
+        <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.12"/>
         <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
       </radialGradient>
-      <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
-        <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity="0.45"/>
-      </filter>
     </defs>
 
-    <g filter="url(#sh)" transform="translate(26,24)">
-      <!-- body -->
+    <g transform="translate(26,24)">
       <path d="M270 250
                C225 305,212 352,236 370
                C270 392,330 350,360 318
@@ -494,67 +503,367 @@
                C288 206,286 230,270 250 Z"
             fill="url(#woodA)" stroke="#1a0c05" stroke-width="8" />
 
-      <!-- inlay -->
       <path d="M302 232 C275 272,266 342,296 360"
-            fill="none" stroke="rgba(255,235,200,.28)" stroke-width="10" stroke-linecap="round"/>
+            fill="none" stroke="rgba(255,235,200,.22)" stroke-width="10" stroke-linecap="round"/>
 
-      <!-- stock rail -->
       <path d="M310 120 L560 210 L534 250 L286 158 Z"
             fill="url(#woodB)" stroke="#241107" stroke-width="8" />
 
-      <!-- trigger housing (dark wood) -->
       <rect x="308" y="172" width="82" height="74" rx="14"
             fill="#2a1408" stroke="#140903" stroke-width="8"/>
       <path d="M348 220 C342 246,360 270,384 278"
             fill="none" stroke="#0c0502" stroke-width="10" stroke-linecap="round"/>
 
-      <!-- bow arms -->
       <path d="M88 92 C210 80,290 120,326 148"
             fill="none" stroke="#2b1408" stroke-width="26" stroke-linecap="round"/>
-      <path d="M96 92 C214 84,288 122,326 148"
-            fill="none" stroke="rgba(255,235,200,.18)" stroke-width="10" stroke-linecap="round"/>
-
       <path d="M120 320 C224 280,284 214,326 148"
             fill="none" stroke="#2b1408" stroke-width="26" stroke-linecap="round"/>
-      <path d="M128 320 C226 282,284 216,326 148"
-            fill="none" stroke="rgba(255,235,200,.16)" stroke-width="10" stroke-linecap="round"/>
 
-      <!-- string -->
       <path d="M102 92 L126 320" stroke="rgba(255,245,220,.95)" stroke-width="4" stroke-linecap="round"/>
       <path d="M102 92 L126 320" stroke="rgba(0,0,0,.22)" stroke-width="7" stroke-linecap="round"/>
 
-      <!-- bolt -->
       <path d="M324 150 L586 236" stroke="rgba(255,245,220,.95)" stroke-width="10" stroke-linecap="round"/>
       <path d="M560 228 L624 250" stroke="rgba(46,242,194,.95)" stroke-width="12" stroke-linecap="round"/>
       <path d="M588 238 L652 218 L652 280 Z" fill="url(#gold)" stroke="#4a2300" stroke-width="8"/>
 
-      <!-- gold details -->
       <circle cx="404" cy="214" r="10" fill="url(#gold)" stroke="#4a2300" stroke-width="6"/>
       <circle cx="468" cy="236" r="10" fill="url(#gold)" stroke="#4a2300" stroke-width="6"/>
 
-      <!-- gloss -->
       <ellipse cx="420" cy="190" rx="300" ry="220" fill="url(#shine)"/>
     </g>
   </svg>`);
 
-  const starImg = svgToImg(`
-  <svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 128 128">
-    <defs>
-      <radialGradient id="g" cx="35%" cy="30%" r="80%">
-        <stop offset="0" stop-color="#fffbe6"/>
-        <stop offset="0.38" stop-color="#ffd54a"/>
-        <stop offset="1" stop-color="#f0a800"/>
-      </radialGradient>
-      <filter id="s" x="-30%" y="-30%" width="160%" height="160%">
-        <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#000" flood-opacity="0.40"/>
-      </filter>
-    </defs>
-    <g filter="url(#s)">
-      <path d="M64 10 L78 46 L118 46 L86 70 L98 110 L64 86 L30 110 L42 70 L10 46 L50 46 Z"
-            fill="url(#g)" stroke="rgba(255,245,210,0.92)" stroke-width="5" />
-      <path d="M50 44 C58 32,78 32,86 44" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="7" stroke-linecap="round"/>
-    </g>
-  </svg>`);
+  // ===== Star skins (✅ 2~3종 랜덤, 캔버스에 프리렌더 → 플리커 방지) =====
+  const starSkins = []; // each: {canvas, size}
+  function buildStarSkins(){
+    starSkins.length = 0;
+    const base = Math.max(72, Math.round(Math.min(W,H) * 0.16)); // 프리렌더 사이즈
+
+    function makeSkin({fillA, fillB, stroke, glA, glB, sparkle, name}){
+      const c = document.createElement("canvas");
+      c.width = base;
+      c.height = base;
+      const g = c.getContext("2d");
+      g.imageSmoothingEnabled = true;
+
+      const cx = base/2, cy = base/2;
+      const R = base*0.37, r = base*0.17;
+
+      // soft glow
+      const glow = g.createRadialGradient(cx, cy, base*0.05, cx, cy, base*0.48);
+      glow.addColorStop(0, glA);
+      glow.addColorStop(0.6, glB);
+      glow.addColorStop(1, "rgba(0,0,0,0)");
+      g.fillStyle = glow;
+      g.beginPath();
+      g.arc(cx, cy, base*0.48, 0, Math.PI*2);
+      g.fill();
+
+      // drop shadow (very mild, no blur flicker: blur small + fixed)
+      g.save();
+      g.globalAlpha = 0.35;
+      g.fillStyle = "rgba(0,0,0,0.55)";
+      g.beginPath();
+      g.ellipse(cx+base*0.03, cy+base*0.09, base*0.26, base*0.13, 0, 0, Math.PI*2);
+      g.fill();
+      g.restore();
+
+      // star path
+      g.beginPath();
+      for(let i=0;i<10;i++){
+        const ang = -Math.PI/2 + i*Math.PI/5;
+        const rr = (i%2===0) ? R : r;
+        const x = cx + Math.cos(ang)*rr;
+        const y = cy + Math.sin(ang)*rr;
+        if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+      }
+      g.closePath();
+
+      // star fill gradient
+      const grad = g.createRadialGradient(cx-base*0.10, cy-base*0.12, base*0.06, cx, cy, base*0.46);
+      grad.addColorStop(0, fillA);
+      grad.addColorStop(1, fillB);
+      g.fillStyle = grad;
+      g.fill();
+
+      g.strokeStyle = stroke;
+      g.lineWidth = Math.max(3, base*0.045);
+      g.lineJoin = "round";
+      g.stroke();
+
+      // inner highlight
+      g.save();
+      g.globalAlpha = 0.25;
+      g.fillStyle = "rgba(255,255,255,0.9)";
+      g.beginPath();
+      g.ellipse(cx-base*0.07, cy-base*0.08, base*0.09, base*0.22, -0.35, 0, Math.PI*2);
+      g.fill();
+      g.restore();
+
+      // sparkles (fixed positions)
+      g.save();
+      g.globalAlpha = 0.55;
+      g.fillStyle = sparkle;
+      const pts = [
+        [0.22,0.28],[0.66,0.22],[0.75,0.62],[0.28,0.72],[0.52,0.78]
+      ];
+      for(const [px,py] of pts){
+        g.fillRect(base*px, base*py, 2, 2);
+        g.fillRect(base*px+4, base*py+2, 1, 1);
+      }
+      g.restore();
+
+      starSkins.push({ canvas:c, size:base, name });
+    }
+
+    // GOLD (classic)
+    makeSkin({
+      name:"GOLD",
+      fillA:"rgba(255,252,235,0.98)",
+      fillB:"rgba(240,168,0,0.98)",
+      stroke:"rgba(255,245,210,0.92)",
+      glA:"rgba(255,213,74,0.35)",
+      glB:"rgba(255,213,74,0.14)",
+      sparkle:"rgba(255,255,255,0.85)"
+    });
+
+    // ICE (silver-blue)
+    makeSkin({
+      name:"ICE",
+      fillA:"rgba(245,252,255,0.98)",
+      fillB:"rgba(120,200,255,0.98)",
+      stroke:"rgba(220,245,255,0.92)",
+      glA:"rgba(160,220,255,0.30)",
+      glB:"rgba(160,220,255,0.12)",
+      sparkle:"rgba(240,255,255,0.85)"
+    });
+
+    // EMERALD (green)
+    makeSkin({
+      name:"EMERALD",
+      fillA:"rgba(240,255,250,0.98)",
+      fillB:"rgba(46,242,194,0.98)",
+      stroke:"rgba(215,255,245,0.92)",
+      glA:"rgba(46,242,194,0.26)",
+      glB:"rgba(46,242,194,0.10)",
+      sparkle:"rgba(240,255,250,0.85)"
+    });
+  }
+
+  // ===== Weather (✅ 비 + 안개 애니메이션, 깔끔/저부하) =====
+  let rain = [];
+  let fog = [];
+  function initWeather(){
+    rain = [];
+    fog = [];
+
+    const countRain = Math.round((W*H) / (900000 / DPR)); // 해상도 따라 자연스럽게
+    const countFog  = Math.round((W*H) / (1400000 / DPR));
+
+    for(let i=0;i<countRain;i++){
+      rain.push({
+        x: fxRand()*W,
+        y: fxRand()*H,
+        v: 700 + fxRand()*900,
+        len: 14 + fxRand()*22,
+        w: 1 + fxRand()*1.2,
+        drift: -40 - fxRand()*70
+      });
+    }
+    for(let i=0;i<countFog;i++){
+      fog.push({
+        x: fxRand()*W,
+        y: H*(0.05 + fxRand()*0.55),
+        r: (Math.min(W,H) * (0.08 + fxRand()*0.14)),
+        vx: (fxRand()*2-1) * (18 + fxRand()*26),
+        vy: (fxRand()*2-1) * (4 + fxRand()*8),
+        a: 0.04 + fxRand()*0.06
+      });
+    }
+  }
+
+  function updateWeather(dt){
+    // rain
+    for(const d of rain){
+      d.x += d.drift * dt;
+      d.y += d.v * dt;
+      if(d.y > H + 40){
+        d.y = -40 - fxRand()*200;
+        d.x = fxRand()*W;
+      }
+      if(d.x < -80){
+        d.x = W + fxRand()*80;
+      }
+    }
+    // fog
+    for(const f of fog){
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+      if(f.x < -f.r*2) f.x = W + f.r*2;
+      if(f.x > W + f.r*2) f.x = -f.r*2;
+      // y 범위만 살짝 유지
+      const yMin = H*0.02, yMax = H*0.62;
+      if(f.y < yMin) f.y = yMin;
+      if(f.y > yMax) f.y = yMax;
+    }
+  }
+
+  function renderWeather(){
+    // fog first (behind gameplay elements 느낌)
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    for(const f of fog){
+      const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r);
+      g.addColorStop(0, `rgba(220,255,235,${f.a})`);
+      g.addColorStop(0.55, `rgba(170,220,255,${f.a*0.7})`);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // rain on top (very subtle, no flashing)
+    ctx.save();
+    ctx.globalAlpha = 0.14;
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineCap = "round";
+    for(const d of rain){
+      ctx.lineWidth = d.w;
+      ctx.beginPath();
+      ctx.moveTo(d.x, d.y);
+      ctx.lineTo(d.x + d.drift*0.035, d.y + d.len);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ===== Background (forest/grass) =====
+  function buildBackground(){
+    bg.setTransform(1,0,0,1,0,0);
+    bg.clearRect(0,0,W,H);
+
+    const sky = bg.createLinearGradient(0,0,0,H);
+    sky.addColorStop(0, "#0b2b1d");
+    sky.addColorStop(0.35, "#0b1e26");
+    sky.addColorStop(0.75, "#07101a");
+    sky.addColorStop(1, "#05070d");
+    bg.fillStyle = sky;
+    bg.fillRect(0,0,W,H);
+
+    const mist = bg.createRadialGradient(W*0.52, H*0.18, 10, W*0.52, H*0.22, Math.max(W,H)*0.55);
+    mist.addColorStop(0, "rgba(220,255,235,0.10)");
+    mist.addColorStop(0.55, "rgba(160,220,255,0.06)");
+    mist.addColorStop(1, "rgba(0,0,0,0)");
+    bg.fillStyle = mist;
+    bg.fillRect(0,0,W,H);
+
+    function drawTreeLayer(yBase, alpha, count){
+      bg.save();
+      bg.globalAlpha = alpha;
+      for(let i=0;i<count;i++){
+        const x = bgRand()*W;
+        const y = yBase + bgRand()* (H*0.22);
+        const h = 140 + bgRand()*260;
+        const w = 22 + bgRand()*40;
+
+        bg.fillStyle = `rgba(16, 20, 16, 0.78)`;
+        bg.beginPath();
+        bg.ellipse(x, y, w*0.35, h*0.48, 0, 0, Math.PI*2);
+        bg.fill();
+
+        const rx = 70 + bgRand()*130;
+        const ry = 50 + bgRand()*110;
+        const g = bg.createRadialGradient(x-rx*0.15, y-h*0.45, 10, x, y-h*0.45, Math.max(rx,ry));
+        g.addColorStop(0, "rgba(70,150,105,0.55)");
+        g.addColorStop(1, "rgba(10,30,22,0)");
+        bg.fillStyle = g;
+        bg.beginPath();
+        bg.ellipse(x, y-h*0.55, rx, ry, (bgRand()*0.8-0.4), 0, Math.PI*2);
+        bg.fill();
+      }
+      bg.restore();
+    }
+    drawTreeLayer(H*0.05, 0.55, 22);
+    drawTreeLayer(H*0.10, 0.42, 18);
+
+    // fixed light shafts
+    bg.save();
+    bg.globalAlpha = 0.10;
+    for(let i=0;i<8;i++){
+      const x = bgRand()*W;
+      const w = 90 + bgRand()*140;
+      const grad = bg.createLinearGradient(x, 0, x+w, H);
+      grad.addColorStop(0, "rgba(255,255,230,0)");
+      grad.addColorStop(0.5, "rgba(255,255,230,0.40)");
+      grad.addColorStop(1, "rgba(255,255,230,0)");
+      bg.fillStyle = grad;
+      bg.beginPath();
+      bg.moveTo(x, 0);
+      bg.lineTo(x+w, 0);
+      bg.lineTo(x+w*0.62, H);
+      bg.lineTo(x-w*0.08, H);
+      bg.closePath();
+      bg.fill();
+    }
+    bg.restore();
+
+    const groundY = H*0.50;
+    const g0 = bg.createLinearGradient(0, groundY, 0, H);
+    g0.addColorStop(0, "#1fa45a");
+    g0.addColorStop(0.35, "#187a45");
+    g0.addColorStop(0.75, "#0e4b2c");
+    g0.addColorStop(1, "#09321e");
+    bg.fillStyle = g0;
+    bg.fillRect(0, groundY, W, H-groundY);
+
+    // grass texture
+    bg.save();
+    bg.globalAlpha = 0.22;
+    for(let i=0;i<1400;i++){
+      const x = bgRand()*W;
+      const y = groundY + bgRand()*(H-groundY);
+      const h = 5 + bgRand()*26;
+      const w = 1 + bgRand()*2;
+      bg.fillStyle = (i%4===0) ? "rgba(255,255,255,0.28)" : "rgba(0,0,0,0.22)";
+      bg.fillRect(x, y, w, h);
+    }
+    bg.restore();
+
+    // foreground bushes
+    bg.save();
+    bg.globalAlpha = 0.22;
+    for(let i=0;i<26;i++){
+      const x = bgRand()*W;
+      const y = groundY + bgRand()*(H-groundY)*0.55;
+      const rx = 50 + bgRand()*120;
+      const ry = 24 + bgRand()*70;
+      const gg = bg.createRadialGradient(x-rx*0.15, y-ry*0.2, 10, x, y, Math.max(rx,ry));
+      gg.addColorStop(0, "rgba(110,200,140,0.65)");
+      gg.addColorStop(1, "rgba(10,30,22,0)");
+      bg.fillStyle = gg;
+      bg.beginPath();
+      bg.ellipse(x, y, rx, ry, bgRand()*1.0, 0, Math.PI*2);
+      bg.fill();
+    }
+    bg.restore();
+
+    bg.save();
+    bg.globalAlpha = 0.18;
+    bg.fillStyle = "rgba(0,0,0,0.60)";
+    bg.fillRect(0, H- Math.max(90, H*0.16), W, Math.max(90, H*0.16));
+    bg.restore();
+  }
+
+  function drawVignette(g){
+    const grad = g.createRadialGradient(W*0.5, H*0.40, 80, W*0.5, H*0.5, Math.max(W,H)*0.78);
+    grad.addColorStop(0, "rgba(0,0,0,0)");
+    grad.addColorStop(0.60, "rgba(0,0,0,0.08)");
+    grad.addColorStop(1, "rgba(0,0,0,0.62)");
+    g.fillStyle = grad;
+    g.fillRect(0,0,W,H);
+  }
 
   // ===== Game State =====
   let running = false;
@@ -575,11 +884,14 @@
 
   let arrowCooldown = 0;
 
+  // ✅ 화면 “빤짝임” 줄이기 위해 랜덤 shake 대신 “연속 사인” shake
   let shakeT = 0;
   let shakePow = 0;
+  let shakePhase = 0;
 
   // ===== Helpers =====
   function rnd(min, max) { return min + Math.random() * (max - min); }
+
   function updateAimFromPointer(clientX, clientY) {
     const p = canvasToLocal(clientX, clientY);
     const dx = p.x - player.x;
@@ -628,174 +940,31 @@
     });
   }
 
-  // ===== Cached Background (✅ 나무숲 + 잔디 업그레이드, 깔끔) =====
-  const bgCanvas = document.createElement("canvas");
-  bgCanvas.width = W;
-  bgCanvas.height = H;
-  const bg = bgCanvas.getContext("2d");
+  // ===== Drawing: Stars / Hazards =====
+  function drawStarCoin(c) {
+    const { x, y, r, skin, spin, bob } = c;
+    const cy = y + Math.sin(bob) * 2.5;
+    const tw = 0.86 + 0.14 * Math.sin(spin * Math.PI * 2);
 
-  function buildBackground(){
-    bg.setTransform(1,0,0,1,0,0);
-    bg.clearRect(0,0,W,H);
-
-    // sky canopy
-    const sky = bg.createLinearGradient(0,0,0,H);
-    sky.addColorStop(0, "#0b2b1d");
-    sky.addColorStop(0.35, "#0b1e26");
-    sky.addColorStop(0.75, "#07101a");
-    sky.addColorStop(1, "#05070d");
-    bg.fillStyle = sky;
-    bg.fillRect(0,0,W,H);
-
-    // mist
-    const mist = bg.createRadialGradient(W*0.52, H*0.18, 10, W*0.52, H*0.22, Math.max(W,H)*0.55);
-    mist.addColorStop(0, "rgba(220,255,235,0.10)");
-    mist.addColorStop(0.55, "rgba(160,220,255,0.06)");
-    mist.addColorStop(1, "rgba(0,0,0,0)");
-    bg.fillStyle = mist;
-    bg.fillRect(0,0,W,H);
-
-    // distant trees (layer 1)
-    function drawTreeLayer(yBase, alpha, count, hueShift=0){
-      bg.save();
-      bg.globalAlpha = alpha;
-      for(let i=0;i<count;i++){
-        const x = bgRand()*W;
-        const y = yBase + bgRand()* (H*0.22);
-        const h = 140 + bgRand()*260;
-        const w = 22 + bgRand()*40;
-
-        // trunk
-        bg.fillStyle = `rgba(${20+hueShift}, ${24+hueShift}, ${18}, 0.75)`;
-        bg.beginPath();
-        bg.ellipse(x, y, w*0.35, h*0.48, 0, 0, Math.PI*2);
-        bg.fill();
-
-        // canopy blob
-        const rx = 70 + bgRand()*130;
-        const ry = 50 + bgRand()*110;
-        const g = bg.createRadialGradient(x-rx*0.15, y-h*0.45, 10, x, y-h*0.45, Math.max(rx,ry));
-        g.addColorStop(0, "rgba(70,150,105,0.55)");
-        g.addColorStop(1, "rgba(10,30,22,0)");
-        bg.fillStyle = g;
-        bg.beginPath();
-        bg.ellipse(x, y-h*0.55, rx, ry, (bgRand()*0.8-0.4), 0, Math.PI*2);
-        bg.fill();
-      }
-      bg.restore();
-    }
-    drawTreeLayer(H*0.05, 0.55, 22, 0);
-    drawTreeLayer(H*0.10, 0.42, 18, 6);
-
-    // light shafts (fixed)
-    bg.save();
-    bg.globalAlpha = 0.12;
-    for(let i=0;i<8;i++){
-      const x = bgRand()*W;
-      const w = 90 + bgRand()*140;
-      const grad = bg.createLinearGradient(x, 0, x+w, H);
-      grad.addColorStop(0, "rgba(255,255,230,0)");
-      grad.addColorStop(0.5, "rgba(255,255,230,0.40)");
-      grad.addColorStop(1, "rgba(255,255,230,0)");
-      bg.fillStyle = grad;
-      bg.beginPath();
-      bg.moveTo(x, 0);
-      bg.lineTo(x+w, 0);
-      bg.lineTo(x+w*0.62, H);
-      bg.lineTo(x-w*0.08, H);
-      bg.closePath();
-      bg.fill();
-    }
-    bg.restore();
-
-    // ground
-    const groundY = H*0.50;
-    const g0 = bg.createLinearGradient(0, groundY, 0, H);
-    g0.addColorStop(0, "#1fa45a");
-    g0.addColorStop(0.35, "#187a45");
-    g0.addColorStop(0.75, "#0e4b2c");
-    g0.addColorStop(1, "#09321e");
-    bg.fillStyle = g0;
-    bg.fillRect(0, groundY, W, H-groundY);
-
-    // grass texture (fixed)
-    bg.save();
-    bg.globalAlpha = 0.22;
-    for(let i=0;i<1400;i++){
-      const x = bgRand()*W;
-      const y = groundY + bgRand()*(H-groundY);
-      const h = 5 + bgRand()*26;
-      const w = 1 + bgRand()*2;
-      bg.fillStyle = (i%4===0) ? "rgba(255,255,255,0.28)" : "rgba(0,0,0,0.22)";
-      bg.fillRect(x, y, w, h);
-    }
-    bg.restore();
-
-    // foreground bushes
-    bg.save();
-    bg.globalAlpha = 0.22;
-    for(let i=0;i<26;i++){
-      const x = bgRand()*W;
-      const y = groundY + bgRand()*(H-groundY)*0.55;
-      const rx = 50 + bgRand()*120;
-      const ry = 24 + bgRand()*70;
-      const gg = bg.createRadialGradient(x-rx*0.15, y-ry*0.2, 10, x, y, Math.max(rx,ry));
-      gg.addColorStop(0, "rgba(110,200,140,0.65)");
-      gg.addColorStop(1, "rgba(10,30,22,0)");
-      bg.fillStyle = gg;
-      bg.beginPath();
-      bg.ellipse(x, y, rx, ry, bgRand()*1.0, 0, Math.PI*2);
-      bg.fill();
-    }
-    bg.restore();
-
-    // subtle foreground shade
-    bg.save();
-    bg.globalAlpha = 0.18;
-    bg.fillStyle = "rgba(0,0,0,0.60)";
-    bg.fillRect(0, H- Math.max(90, H*0.16), W, Math.max(90, H*0.16));
-    bg.restore();
-  }
-
-  function drawVignette(g){
-    const grad = g.createRadialGradient(W*0.5, H*0.40, 80, W*0.5, H*0.5, Math.max(W,H)*0.78);
-    grad.addColorStop(0, "rgba(0,0,0,0)");
-    grad.addColorStop(0.60, "rgba(0,0,0,0.08)");
-    grad.addColorStop(1, "rgba(0,0,0,0.62)");
-    g.fillStyle = grad;
-    g.fillRect(0,0,W,H);
-  }
-
-  // ===== Coin / Hazard =====
-  // ✅ “동그라미 제거”: 별만 + 글로우만
-  function drawStarCoin(x, y, r, spinT = 0) {
-    const tw = 0.85 + 0.15 * Math.sin(spinT * Math.PI * 2);
-    const size = r * 2.05 * tw;
-
-    // soft glow
+    // super soft glow (stable)
     ctx.save();
-    const g = ctx.createRadialGradient(x, y, r*0.2, x, y, r*2.6);
-    g.addColorStop(0, "rgba(255,213,74,0.35)");
-    g.addColorStop(0.55, "rgba(255,213,74,0.18)");
+    const g = ctx.createRadialGradient(x, cy, r*0.2, x, cy, r*2.4);
+    g.addColorStop(0, "rgba(255,213,74,0.22)");
+    g.addColorStop(0.65, "rgba(255,213,74,0.10)");
     g.addColorStop(1, "rgba(255,213,74,0)");
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(x, y, r*2.6, 0, Math.PI*2);
+    ctx.arc(x, cy, r*2.4, 0, Math.PI*2);
     ctx.fill();
 
-    // shadow
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.beginPath();
-    ctx.ellipse(x+4, y+8, r*0.95, r*0.55, 0, 0, Math.PI*2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-
-    if (starImg.complete && starImg.naturalWidth) {
-      ctx.drawImage(starImg, x - size/2, y - size/2, size, size);
+    // bitmap star skin
+    const s = r * 2.1 * tw;
+    const img = starSkins[skin % starSkins.length]?.canvas;
+    if (img) {
+      ctx.drawImage(img, x - s/2, cy - s/2, s, s);
     } else {
-      // fallback star
-      ctx.translate(x,y);
+      // fallback
+      ctx.translate(x, cy);
       ctx.fillStyle = "rgba(255,213,74,0.98)";
       ctx.beginPath();
       for (let i=0;i<10;i++){
@@ -815,19 +984,17 @@
     ctx.translate(x, y);
 
     const glow = ctx.createRadialGradient(0,0, r*0.2, 0,0, r*2.0);
-    glow.addColorStop(0, `rgba(255,59,92,${0.55*blink})`);
-    glow.addColorStop(0.35, `rgba(255,59,92,${0.22*blink})`);
+    glow.addColorStop(0, `rgba(255,59,92,${0.45*blink})`);
+    glow.addColorStop(0.35, `rgba(255,59,92,${0.18*blink})`);
     glow.addColorStop(1, "rgba(255,59,92,0)");
     ctx.fillStyle = glow;
     ctx.beginPath();
     ctx.arc(0,0,r*2.0,0,Math.PI*2);
     ctx.fill();
 
-    ctx.shadowColor = "rgba(0,0,0,0.35)";
-    ctx.shadowBlur = 12;
     ctx.fillStyle = "rgba(255,59,92,0.95)";
-    ctx.strokeStyle = "rgba(255,240,242,0.80)";
-    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(255,240,242,0.78)";
+    ctx.lineWidth = Math.max(3, r*0.20);
 
     ctx.beginPath();
     const A = -Math.PI/2;
@@ -852,29 +1019,8 @@
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    ctx.shadowBlur = 0;
 
-    ctx.globalAlpha = 0.92;
-    ctx.fillStyle = "rgba(18,22,34,0.62)";
-    ctx.beginPath();
-    ctx.arc(0, r*0.12, r*0.44, 0, Math.PI*2);
-    ctx.fill();
-
-    ctx.globalAlpha = 0.92;
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.beginPath();
-    ctx.arc(0, r*0.05, r*0.22, 0, Math.PI*2);
-    ctx.fill();
-    ctx.fillRect(-r*0.14, r*0.18, r*0.28, r*0.16);
-
-    ctx.fillStyle = "rgba(18,22,34,0.90)";
-    ctx.beginPath();
-    ctx.arc(-r*0.07, r*0.03, r*0.05, 0, Math.PI*2);
-    ctx.arc( r*0.07, r*0.03, r*0.05, 0, Math.PI*2);
-    ctx.fill();
-    ctx.fillRect(-r*0.06, r*0.12, r*0.12, r*0.04);
-
-    ctx.globalAlpha = 0.35 + 0.35*blink;
+    ctx.globalAlpha = 0.32 + 0.28*blink;
     ctx.strokeStyle = "rgba(255,255,255,0.85)";
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -908,7 +1054,8 @@
         vx: (Math.random()*260-130) * cfg.move,
         vy: (Math.random()*200-100) * cfg.move,
         spin: Math.random(),
-        bob: Math.random()*10
+        bob: Math.random()*10,
+        skin: (Math.random()*starSkins.length) | 0, // ✅ 랜덤 스킨
       });
     }
 
@@ -934,15 +1081,14 @@
     let angle = aim.smooth;
     angle = clamp(angle, -Math.PI + 0.26, -0.23);
 
-    const sp = power;
     const ax = Math.cos(angle);
     const ay = Math.sin(angle);
 
     arrows.push({
       x: player.x + ax * (player.r + 2),
       y: player.y + ay * (player.r + 2),
-      vx: ax * sp,
-      vy: ay * sp,
+      vx: ax * power,
+      vy: ay * power,
       rot: angle,
       alive: true,
       trail: [],
@@ -1001,7 +1147,7 @@
     popups = [];
     arrowCooldown = 0;
 
-    shakeT = 0; shakePow = 0;
+    shakeT = 0; shakePow = 0; shakePhase = 0;
 
     spawnEntities();
     updateHud();
@@ -1050,7 +1196,7 @@
     lastTs = ts;
 
     update(dt, dtMs);
-    render();
+    render(dt);
     requestAnimationFrame(loop);
   }
 
@@ -1067,6 +1213,9 @@
       gameOver("TIME");
       return;
     }
+
+    // weather
+    updateWeather(dt);
 
     aim.smooth = lerp(aim.smooth, aim.angle, 1 - Math.pow(0.001, dt*60));
     aim.smooth = clamp(aim.smooth, -Math.PI + 0.26, -0.23);
@@ -1106,6 +1255,7 @@
     if (shakeT > 0) {
       shakeT = Math.max(0, shakeT - dt);
       shakePow = lerp(shakePow, 0, 1 - Math.pow(0.001, dt*60));
+      shakePhase += dt * 22;
     }
 
     const g = 820;
@@ -1165,12 +1315,15 @@
 
           if (crit) sfx.crit(); else sfx.hit();
 
+          // respawn + random skin
           c.x = rnd(LEFT + c.r, RIGHT - c.r);
           c.y = rnd(TOP + c.r, BOTTOM - 170);
           c.vx = (Math.random()*300-150) * cfg.move;
           c.vy = (Math.random()*240-120) * cfg.move;
           c.spin = Math.random();
           c.bob = Math.random()*10;
+          c.skin = (Math.random()*starSkins.length) | 0;
+
           break;
         }
       }
@@ -1199,15 +1352,24 @@
     updateHud();
   }
 
-  function render() {
+  function render(dt) {
     ctx.save();
+
+    // ✅ 연속 shake (랜덤 jitter 제거)
     if (shakeT > 0 && shakePow > 0.1) {
-      const s = shakePow * (shakeT / 0.20);
-      ctx.translate((Math.random()*2-1)*s, (Math.random()*2-1)*s);
+      const k = (shakeT / 0.20);
+      const s = shakePow * k;
+      const ox = Math.sin(shakePhase) * s;
+      const oy = Math.cos(shakePhase*1.3) * s;
+      ctx.translate(ox, oy);
     }
 
-    // background
+    // background (cached)
+    if (!bgBuilt) buildBackground();
     ctx.drawImage(bgCanvas, 0, 0);
+
+    // fog/rain (animated)
+    renderWeather();
 
     // border
     ctx.save();
@@ -1220,11 +1382,8 @@
     // hazards
     for (const h of hazards) drawHazard(h.x, h.y, h.r, h.blink);
 
-    // coins (stars)
-    for (const c of coins) {
-      const cy = c.y + Math.sin(c.bob) * 2.5;
-      drawStarCoin(c.x, cy, c.r, c.spin);
-    }
+    // stars
+    for (const c of coins) drawStarCoin(c);
 
     // popups
     for (const s of popups) {
@@ -1243,10 +1402,13 @@
         : (s.isCrit ? "rgba(255,213,74,0.98)" : "rgba(255,248,225,0.95)");
       ctx.fillText(s.text, s.x, s.y);
 
-      if (s.isCrit && starImg.complete && starImg.naturalWidth) {
-        ctx.globalAlpha = a * 0.85;
+      if (s.isCrit) {
         const sz = Math.max(18, Math.round(Math.min(W,H)*0.05));
-        ctx.drawImage(starImg, s.x - sz/2, s.y - sz*1.35, sz, sz);
+        const img = starSkins[0]?.canvas;
+        if (img) {
+          ctx.globalAlpha = a * 0.85;
+          ctx.drawImage(img, s.x - sz/2, s.y - sz*1.35, sz, sz);
+        }
       }
       ctx.restore();
     }
@@ -1256,9 +1418,9 @@
       ctx.save();
       for (let i=0;i<ar.trail.length;i++){
         const p = ar.trail[i];
-        const alpha = (i / ar.trail.length) * 0.35;
+        const alpha = (i / ar.trail.length) * 0.28;
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = "rgba(255,243,215,0.92)";
+        ctx.fillStyle = "rgba(255,243,215,0.90)";
         ctx.fillRect(p[0], p[1], 3, 3);
       }
       ctx.restore();
@@ -1348,8 +1510,8 @@
     ctx.lineTo(bx, by);
     ctx.stroke();
 
-    ctx.globalAlpha = 0.52;
-    ctx.strokeStyle = "rgba(255,243,215,0.36)";
+    ctx.globalAlpha = 0.48;
+    ctx.strokeStyle = "rgba(255,243,215,0.34)";
     ctx.setLineDash([7, 7]);
     ctx.beginPath();
     ctx.moveTo(bx, by);
@@ -1363,14 +1525,15 @@
     ctx.translate(player.x, player.y);
     ctx.rotate(aim.smooth);
 
-    ctx.globalAlpha = 0.20;
-    ctx.fillStyle = "rgba(0,0,0,0.50)";
+    // mild shadow (no blur)
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.beginPath();
     ctx.ellipse(Math.min(W,H)*0.05, Math.min(W,H)*0.04, Math.min(W,H)*0.12, Math.min(W,H)*0.045, 0, 0, Math.PI*2);
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    const scale = Math.min(W,H) / 1700; // 화면 크기에 따라 자동 스케일
+    const scale = Math.min(W,H) / 1700;
     const iw = 720 * scale, ih = 420 * scale;
 
     if (crossbowImg.complete && crossbowImg.naturalWidth) {
@@ -1389,6 +1552,9 @@
   // ===== Init =====
   resizeCanvasToStage();
   buildBackground();
+  buildStarSkins();
+  initWeather();
+  bgBuilt = true;
 
   bestText.textContent = String(best);
   scoreText.textContent = "0";
