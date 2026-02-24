@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover" />
   <title>XGP 석궁 미니게임</title>
   <style>
     :root{
@@ -16,15 +16,29 @@
       --muted: rgba(255,255,255,.64);
     }
     *{box-sizing:border-box}
+    html,body{height:100%}
     body{
-      margin:0; min-height:100vh;
-      display:grid; place-items:center;
+      margin:0;
+      min-height:100svh;
+      display:grid;
+      place-items:center;
       background: radial-gradient(1200px 700px at 50% 20%, #111b34 0%, #080b14 55%, #05070d 100%);
       color:var(--text);
       font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, sans-serif;
       overflow:hidden;
+      padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+               max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
     }
-    .wrap{ width:min(980px, 96vw); display:grid; grid-template-rows:auto 1fr; gap:10px; padding:12px; }
+
+    /* Desktop default */
+    .wrap{
+      width:min(980px, 96vw);
+      height: min(720px, 92svh);
+      display:grid;
+      grid-template-rows:auto 1fr;
+      gap:10px;
+    }
+
     .topbar{
       display:flex; gap:10px; flex-wrap:wrap;
       align-items:center; justify-content:space-between;
@@ -35,16 +49,18 @@
       box-shadow: 0 12px 40px rgba(0,0,0,.35);
       backdrop-filter: blur(8px);
     }
-    .hud{ display:flex; gap:12px; flex-wrap:wrap; align-items:center; font-weight:800; }
+    .hud{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; font-weight:900; }
     .pill{
       display:flex; gap:8px; align-items:center;
       padding:8px 10px;
       border-radius:999px;
       border:1px solid rgba(255,255,255,.10);
       background: rgba(0,0,0,.20);
+      white-space:nowrap;
     }
     .pill b{color:rgba(255,255,255,.95)}
-    .pill span{color:var(--muted); font-weight:700}
+    .pill span{color:var(--muted); font-weight:800}
+
     .btns{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
     button{
       appearance:none; border:1px solid rgba(255,255,255,.12);
@@ -52,11 +68,13 @@
       color: rgba(255,255,255,.92);
       padding:10px 12px;
       border-radius:12px;
-      font-weight:900;
+      font-weight:950;
       cursor:pointer;
       box-shadow: 0 10px 24px rgba(0,0,0,.28);
       transition: transform .12s ease, background .12s ease, border-color .12s ease;
       user-select:none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
     button:hover{ transform: translateY(-1px); background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.18); }
     button:active{ transform: translateY(1px) scale(.99); }
@@ -77,13 +95,15 @@
       cursor:pointer;
       transition: .12s ease;
       user-select:none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
     .chip.is-on{
       background: rgba(255,213,74,.16);
       border-color: rgba(255,213,74,.35);
       box-shadow: 0 10px 22px rgba(255,213,74,.08);
     }
-    .hint{ color: rgba(255,255,255,.64); font-weight:800; margin-left:4px; font-size: 12px; }
+    .hint{ color: rgba(255,255,255,.64); font-weight:850; margin-left:4px; font-size: 12px; }
 
     .stage{
       position:relative;
@@ -92,8 +112,10 @@
       border:1px solid rgba(255,255,255,.10);
       background: rgba(0,0,0,.18);
       box-shadow: 0 20px 70px rgba(0,0,0,.45);
-      aspect-ratio: 16/9;
       width:100%;
+      /* keep 16:9 but fill vertical space better */
+      aspect-ratio: 16/9;
+      max-height: calc(92svh - 88px);
     }
     canvas{
       width:100%;
@@ -102,6 +124,7 @@
       touch-action: none;
       background: #070a10;
     }
+
     .overlay{
       position:absolute; inset:0;
       display:flex;
@@ -127,6 +150,7 @@
       display:flex;
       align-items:center;
       gap:10px;
+      flex-wrap:wrap;
     }
     .badge{
       display:inline-flex;
@@ -139,12 +163,13 @@
       background: rgba(255,213,74,.14);
       color: rgba(255,243,215,.96);
       font-size:12px;
+      white-space:nowrap;
     }
     .desc{
       margin:0 0 12px;
       color: rgba(255,255,255,.78);
       line-height:1.45;
-      font-weight:700;
+      font-weight:750;
     }
     .desc b{color: rgba(255,255,255,.95)}
     .desc .gold{color: rgba(255,213,74,.95); font-weight:950}
@@ -155,7 +180,7 @@
       border-radius:14px;
       border:1px solid rgba(255,255,255,.10);
       background: rgba(0,0,0,.22);
-      font-weight:900;
+      font-weight:950;
       color: rgba(255,255,255,.86);
       line-height:1.55;
     }
@@ -165,7 +190,50 @@
       justify-content:space-between; align-items:center;
     }
     .actions .left{display:flex; gap:10px; flex-wrap:wrap}
-    .note{ color: rgba(255,255,255,.58); font-size:12px; font-weight:750; }
+    .note{ color: rgba(255,255,255,.58); font-size:12px; font-weight:800; }
+
+    /* ✅ Mobile: full-screen 느낌 + 버튼/칩 크기 줄이기 */
+    @media (max-width: 720px){
+      body{padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);}
+      .wrap{
+        width:100vw;
+        height:100svh;
+        padding:10px;
+        gap:8px;
+      }
+      .topbar{
+        padding:8px 10px;
+        border-radius:16px;
+      }
+      .pill{
+        padding:6px 8px;
+        font-size:12px;
+      }
+      .diff{
+        padding:5px 6px;
+        gap:6px;
+      }
+      .chip{
+        padding:7px 9px;
+        font-size:12px;
+        border-radius:999px;
+      }
+      .hint{display:none;}
+      button{
+        padding:8px 10px;
+        font-size:12px;
+        border-radius:12px;
+      }
+      .stage{
+        border-radius:18px;
+        max-height:none;
+        height: calc(100svh - 86px);
+        aspect-ratio: auto;
+      }
+      .card{padding:16px 14px}
+      .title{font-size:18px}
+      .note{font-size:11px}
+    }
   </style>
 </head>
 <body>
@@ -206,7 +274,7 @@
               <button id="startBtn">START</button>
               <button id="resetBtn2">CLOSE</button>
             </div>
-            <div class="note">드래그/마우스 이동 조준 → 떼면 발사 / Space 발사 / R 리셋</div>
+            <div class="note">드래그/이동 조준 → 떼면 발사 / Space 발사 / R 리셋</div>
           </div>
         </div>
       </div>
@@ -244,12 +312,13 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
 
+  // playfield
   const TOP = 88;
   const BOTTOM = H - 108;
   const LEFT = 26;
   const RIGHT = W - 26;
 
-  // ===== Stable RNG (깜빡임 방지용) =====
+  // ===== Stable RNG (배경 고정) =====
   function mulberry32(seed){
     let a = seed >>> 0;
     return function(){
@@ -259,7 +328,6 @@
       return ((t ^ t >>> 14) >>> 0) / 4294967296;
     };
   }
-  // 배경용 RNG는 고정 seed로 (항상 같은 패턴)
   const bgRand = mulberry32(0xC0FFEE);
 
   // ===== Audio (no files) =====
@@ -313,17 +381,17 @@
   function setDifficulty(d) {
     difficulty = d;
     diffButtons.forEach(b => b.classList.toggle("is-on", b.dataset.diff === d));
-    diffHint.textContent = DIFF_HINTS[d] || "";
+    if (diffHint) diffHint.textContent = DIFF_HINTS[d] || "";
     diffText.textContent = d;
   }
   diffButtons.forEach(btn => btn.addEventListener("click", () => setDifficulty(btn.dataset.diff)));
   setDifficulty("EASY");
 
   // ===== Best =====
-  const BEST_KEY = "xgp_crossbow_best_v6";
+  const BEST_KEY = "xgp_crossbow_best_v7";
   let best = Number(localStorage.getItem(BEST_KEY) || 0);
 
-  // ===== Assets (embedded SVG images) =====
+  // ===== Assets (embedded SVG) =====
   function svgToImg(svg) {
     const img = new Image();
     img.decoding = "async";
@@ -493,7 +561,7 @@
     });
   }
 
-  // ===== Cached Background (여기가 핵심: 깜빡임 방지) =====
+  // ===== Cached Background (✅ 회색 구덩이 제거 + 고급 잔디) =====
   const bgCanvas = document.createElement("canvas");
   bgCanvas.width = W;
   bgCanvas.height = H;
@@ -504,12 +572,13 @@
     const sky = bg.createLinearGradient(0,0,0,H);
     sky.addColorStop(0, "#6fb3ff");
     sky.addColorStop(0.22, "#97d5ff");
-    sky.addColorStop(0.50, "#7cc7ff");
-    sky.addColorStop(1, "#1b2436");
+    sky.addColorStop(0.52, "#7cc7ff");
+    sky.addColorStop(1, "#142236");
     bg.fillStyle = sky;
     bg.fillRect(0,0,W,H);
 
-    bg.fillStyle = "rgba(255,255,255,0.06)";
+    // soft haze
+    bg.fillStyle = "rgba(255,255,255,0.05)";
     bg.fillRect(0, 0, W, H);
 
     function roundRect(g, x,y,w,h,r){
@@ -536,7 +605,7 @@
       roundRect(bg, 0,0,ww,H-80,18);
       bg.fill();
 
-      // bricks (고정 패턴)
+      // bricks
       bg.globalAlpha = 0.22;
       bg.fillStyle = "rgba(255,255,255,0.9)";
       for(let yy=18; yy<H-120; yy+=22){
@@ -547,7 +616,7 @@
       }
       bg.globalAlpha = 1;
 
-      // vines (고정 좌표)
+      // vines (fixed)
       bg.globalAlpha = 0.95;
       bg.fillStyle = "rgba(86,170,88,0.55)";
       for(let i=0;i<14;i++){
@@ -562,46 +631,76 @@
     }
     wall("L"); wall("R");
 
-    // ground
-    const ground = bg.createLinearGradient(0,H*0.52,0,H);
-    ground.addColorStop(0, "#2d7f42");
-    ground.addColorStop(0.6, "#1f5e33");
-    ground.addColorStop(1, "#143b22");
-    bg.fillStyle = ground;
-    bg.fillRect(0, H*0.52, W, H*0.48);
+    // ✅ Premium grass base (no gray pit)
+    const groundY = H*0.52;
+    const g0 = bg.createLinearGradient(0, groundY, 0, H);
+    g0.addColorStop(0, "#2fa45a");
+    g0.addColorStop(0.35, "#1f7a42");
+    g0.addColorStop(0.75, "#155b31");
+    g0.addColorStop(1, "#0f4124");
+    bg.fillStyle = g0;
+    bg.fillRect(0, groundY, W, H-groundY);
 
-    // path
+    // grass texture (fixed)
+    bg.save();
+    bg.globalAlpha = 0.20;
+    for(let i=0;i<1200;i++){
+      const x = bgRand()*W;
+      const y = groundY + bgRand()*(H-groundY);
+      const h = 6 + bgRand()*22;
+      const w = 1 + bgRand()*2;
+      bg.fillStyle = (i%3===0) ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.25)";
+      bg.fillRect(x, y, w, h);
+    }
+    bg.restore();
+
+    // grass clumps (fixed)
+    bg.save();
+    bg.globalAlpha = 0.25;
+    for(let i=0;i<60;i++){
+      const x = bgRand()*W;
+      const y = groundY + bgRand()*(H-groundY);
+      const rx = 18 + bgRand()*28;
+      const ry = 10 + bgRand()*18;
+      bg.fillStyle = (i%2===0) ? "rgba(0,0,0,0.24)" : "rgba(255,255,255,0.16)";
+      bg.beginPath();
+      bg.ellipse(x, y, rx, ry, bgRand()*1.2, 0, Math.PI*2);
+      bg.fill();
+    }
+    bg.restore();
+
+    // subtle dirt path (still ok)
     bg.save();
     bg.translate(W*0.5, H*0.56);
     bg.beginPath();
-    bg.moveTo(-110, H*0.42);
-    bg.lineTo(110, H*0.42);
-    bg.lineTo(200, -40);
-    bg.lineTo(-200, -40);
+    bg.moveTo(-120, H*0.42);
+    bg.lineTo(120, H*0.42);
+    bg.lineTo(210, -40);
+    bg.lineTo(-210, -40);
     bg.closePath();
 
     const p = bg.createLinearGradient(0,-70,0,H*0.45);
-    p.addColorStop(0, "rgba(120,110,98,0.95)");
-    p.addColorStop(0.6, "rgba(78,72,66,0.96)");
-    p.addColorStop(1, "rgba(40,36,34,0.98)");
+    p.addColorStop(0, "rgba(120,110,98,0.88)");
+    p.addColorStop(0.6, "rgba(78,72,66,0.92)");
+    p.addColorStop(1, "rgba(40,36,34,0.94)");
     bg.fillStyle = p;
     bg.fill();
 
-    // stones (고정 랜덤)
+    // stones fixed
     bg.clip();
-    bg.globalAlpha = 0.35;
+    bg.globalAlpha = 0.30;
     bg.fillStyle = "rgba(255,255,255,0.9)";
-    for(let i=0;i<140;i++){
-      const x = -190 + bgRand()*380;
+    for(let i=0;i<120;i++){
+      const x = -200 + bgRand()*400;
       const y = -50 + bgRand()*(H*0.40 + 50);
-      const ww = 16 + bgRand()*18;
+      const ww = 14 + bgRand()*18;
       const hh = 10 + bgRand()*12;
       bg.fillRect(x, y, ww, hh);
     }
     bg.globalAlpha = 1;
     bg.restore();
 
-    // target stand + targets (고정)
+    // target stand
     bg.save();
     bg.translate(W*0.5, H*0.21);
 
@@ -650,17 +749,25 @@
     for(let i=0;i<6;i++) drawTarget(xs[i], ys[i], 0.9);
     bg.restore();
 
-    // foreground shade + grass blades (고정)
+    // foreground shade
     bg.save();
-    bg.globalAlpha = 0.22;
-    bg.fillStyle = "rgba(0,0,0,0.35)";
-    bg.fillRect(0, H-90, W, 90);
-    bg.globalAlpha = 0.18;
-    bg.fillStyle = "rgba(255,255,255,0.55)";
-    for(let i=0;i<120;i++){
-      const x = (i*29) % W;
-      const y = H - (18 + bgRand()*70);
-      bg.fillRect(x, y, 2, 8 + bgRand()*10);
+    bg.globalAlpha = 0.12;
+    bg.fillStyle = "rgba(0,0,0,0.55)";
+    bg.fillRect(0, H-110, W, 110);
+    bg.restore();
+
+    // optional rain streaks (fixed positions, not animated -> no flicker)
+    bg.save();
+    bg.globalAlpha = 0.10;
+    bg.strokeStyle = "rgba(255,255,255,0.6)";
+    bg.lineWidth = 2;
+    for(let i=0;i<160;i++){
+      const x = bgRand()*W;
+      const y = bgRand()*H;
+      bg.beginPath();
+      bg.moveTo(x, y);
+      bg.lineTo(x-10, y+18);
+      bg.stroke();
     }
     bg.restore();
   }
@@ -674,7 +781,7 @@
     g.fillRect(0,0,W,H);
   }
 
-  // ===== Draw coin / hazard =====
+  // ===== Coin / Hazard =====
   function drawStarCoin(x, y, r, spinT = 0) {
     const wobble = 0.78 + 0.22 * Math.sin(spinT * Math.PI * 2);
     const rx = r * wobble;
@@ -835,7 +942,7 @@
       const core = 10 + i * 0.8;
       coins.push({
         x: rnd(LEFT + r, RIGHT - r),
-        y: rnd(TOP + r, BOTTOM - 190),
+        y: rnd(TOP + r, BOTTOM - 170),
         r, core, points,
         vx: (Math.random()*260-130) * cfg.move,
         vy: (Math.random()*200-100) * cfg.move,
@@ -848,7 +955,7 @@
       const r = 16 + (i % 3);
       hazards.push({
         x: rnd(LEFT + r, RIGHT - r),
-        y: rnd(TOP + r, BOTTOM - 150),
+        y: rnd(TOP + r, BOTTOM - 130),
         r,
         vx: (Math.random()*340-170) * cfg.move,
         vy: (Math.random()*280-140) * cfg.move,
@@ -884,7 +991,7 @@
     sfx.shoot();
   }
 
-  // ===== Game Flow =====
+  // ===== Overlay / HUD =====
   function showStartOverlay() {
     ovTitle.textContent = "XGP 석궁 미니게임";
     ovDesc.innerHTML =
@@ -912,6 +1019,13 @@
     overlay.style.display = "flex";
   }
 
+  function updateHud() {
+    timeText.textContent = remaining.toFixed(1);
+    scoreText.textContent = String(score);
+    bestText.textContent = String(best);
+  }
+
+  // ===== Game Flow =====
   function startRound() {
     ensureAudio();
     running = true;
@@ -937,12 +1051,6 @@
   function resetRoundToOverlay() {
     running = false;
     showStartOverlay();
-  }
-
-  function updateHud() {
-    timeText.textContent = remaining.toFixed(1);
-    scoreText.textContent = String(score);
-    bestText.textContent = String(best);
   }
 
   // ===== Input =====
@@ -976,7 +1084,7 @@
   // ===== Loop =====
   function loop(ts) {
     if (!running) return;
-    const dtMs = clamp(ts - lastTs, 0, 34);
+    const dtMs = Math.max(0, Math.min(34, ts - lastTs));
     const dt = dtMs / 1000;
     lastTs = ts;
 
@@ -1097,12 +1205,11 @@
           if (crit) sfx.crit(); else sfx.hit();
 
           c.x = rnd(LEFT + c.r, RIGHT - c.r);
-          c.y = rnd(TOP + c.r, BOTTOM - 190);
+          c.y = rnd(TOP + c.r, BOTTOM - 170);
           c.vx = (Math.random()*300-150) * cfg.move;
           c.vy = (Math.random()*240-120) * cfg.move;
           c.spin = Math.random();
           c.bob = Math.random()*10;
-
           break;
         }
       }
@@ -1132,19 +1239,16 @@
   }
 
   function render() {
-    // camera shake
     ctx.save();
     if (shakeT > 0 && shakePow > 0.1) {
       const s = shakePow * (shakeT / 0.20);
-      const ox = (Math.random()*2-1) * s;
-      const oy = (Math.random()*2-1) * s;
-      ctx.translate(ox, oy);
+      ctx.translate((Math.random()*2-1)*s, (Math.random()*2-1)*s);
     }
 
-    // ✅ 배경은 캐시된 이미지 그대로 찍기 (깜빡임 제거)
+    // background
     ctx.drawImage(bgCanvas, 0, 0);
 
-    // playfield border
+    // border
     ctx.save();
     ctx.strokeStyle = "rgba(255,210,120,0.18)";
     ctx.lineWidth = 2;
@@ -1194,7 +1298,7 @@
       ctx.restore();
     }
 
-    // arrows + trails
+    // arrows + trail
     for (const ar of arrows) {
       ctx.save();
       for (let i=0;i<ar.trail.length;i++){
@@ -1223,6 +1327,7 @@
 
       ctx.fillStyle = "rgba(46,242,194,0.98)";
       ctx.fillRect(-25, -6, 4, 12);
+
       ctx.restore();
     }
 
@@ -1266,6 +1371,7 @@
   }
 
   function drawPlayerAndCrossbow(){
+    // player base
     ctx.save();
     ctx.fillStyle = "rgba(46,242,194,0.18)";
     ctx.strokeStyle = "rgba(46,242,194,0.55)";
@@ -1276,6 +1382,7 @@
     ctx.stroke();
     ctx.restore();
 
+    // aim guide
     const ax = Math.cos(aim.smooth), ay = Math.sin(aim.smooth);
     const bx = player.x + ax * 70;
     const by = player.y + ay * 70;
@@ -1298,11 +1405,12 @@
     ctx.setLineDash([]);
     ctx.restore();
 
+    // crossbow
     ctx.save();
     ctx.translate(player.x, player.y);
     ctx.rotate(aim.smooth);
 
-    ctx.globalAlpha = 0.26;
+    ctx.globalAlpha = 0.22;
     ctx.fillStyle = "rgba(0,0,0,0.45)";
     ctx.beginPath();
     ctx.ellipse(24, 18, 72, 24, 0, 0, Math.PI*2);
@@ -1326,7 +1434,6 @@
   }
 
   // ===== Init =====
-  // ✅ 배경 먼저 생성(한 번만)
   buildBackground();
 
   bestText.textContent = String(best);
