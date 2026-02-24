@@ -1,0 +1,1445 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>XGP 양궁(석궁) 미니게임</title>
+  <style>
+    :root{
+      --bg:#070B12;
+      --panel: rgba(10,14,22,.72);
+      --panel2: rgba(10,14,22,.55);
+      --line: rgba(255,255,255,.10);
+      --gold: #ffd54a;
+      --mint: #2ef2c2;
+      --warn: #ff3b5c;
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.64);
+      --shadow: rgba(0,0,0,.55);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; min-height:100vh;
+      display:grid; place-items:center;
+      background: radial-gradient(1200px 700px at 50% 20%, #111b34 0%, #080b14 55%, #05070d 100%);
+      color:var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, sans-serif;
+      overflow:hidden;
+    }
+    .wrap{
+      width:min(980px, 96vw);
+      display:grid;
+      grid-template-rows:auto 1fr;
+      gap:10px;
+      padding:12px;
+    }
+    .topbar{
+      display:flex; gap:10px; flex-wrap:wrap;
+      align-items:center; justify-content:space-between;
+      padding:10px 12px;
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:linear-gradient(180deg, var(--panel), var(--panel2));
+      box-shadow: 0 12px 40px rgba(0,0,0,.35);
+      backdrop-filter: blur(8px);
+    }
+    .hud{
+      display:flex; gap:12px; flex-wrap:wrap; align-items:center;
+      font-weight:700; letter-spacing:.2px;
+    }
+    .pill{
+      display:flex; gap:8px; align-items:center;
+      padding:8px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.20);
+    }
+    .pill b{color:rgba(255,255,255,.95)}
+    .pill span{color:var(--muted); font-weight:650}
+    .btns{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+    button{
+      appearance:none; border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.22);
+      color: rgba(255,255,255,.92);
+      padding:10px 12px;
+      border-radius:12px;
+      font-weight:800;
+      cursor:pointer;
+      box-shadow: 0 10px 24px rgba(0,0,0,.28);
+      transition: transform .12s ease, background .12s ease, border-color .12s ease;
+      user-select:none;
+    }
+    button:hover{ transform: translateY(-1px); background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.18); }
+    button:active{ transform: translateY(1px) scale(.99); }
+
+    .diff{
+      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+      padding:6px 8px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+    }
+    .chip{
+      padding:8px 10px;
+      border-radius:999px;
+      font-weight:900;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.20);
+      cursor:pointer;
+      transition: .12s ease;
+      user-select:none;
+    }
+    .chip.is-on{
+      background: rgba(255,213,74,.16);
+      border-color: rgba(255,213,74,.35);
+      box-shadow: 0 10px 22px rgba(255,213,74,.08);
+    }
+    .hint{
+      color: rgba(255,255,255,.64);
+      font-weight:700;
+      margin-left:4px;
+      font-size: 12px;
+    }
+
+    .stage{
+      position:relative;
+      border-radius:18px;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+      box-shadow: 0 20px 70px rgba(0,0,0,.45);
+      aspect-ratio: 16/9;
+      width:100%;
+    }
+    canvas{
+      width:100%;
+      height:100%;
+      display:block;
+      image-rendering: auto;
+      touch-action: none;
+      background: #070a10;
+    }
+    .overlay{
+      position:absolute; inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+      background: radial-gradient(900px 500px at 50% 30%, rgba(0,0,0,.60) 0%, rgba(0,0,0,.82) 70%, rgba(0,0,0,.92) 100%);
+      backdrop-filter: blur(7px);
+    }
+    .card{
+      width:min(560px, 92%);
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,.14);
+      background: linear-gradient(180deg, rgba(18,22,34,.84), rgba(10,12,18,.84));
+      box-shadow: 0 24px 90px rgba(0,0,0,.55);
+      padding:18px 16px 16px;
+    }
+    .title{
+      font-size:20px;
+      font-weight:950;
+      letter-spacing:.3px;
+      margin:0 0 8px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      font-weight:950;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,213,74,.32);
+      background: rgba(255,213,74,.14);
+      color: rgba(255,243,215,.96);
+      font-size:12px;
+    }
+    .desc{
+      margin:0 0 12px;
+      color: rgba(255,255,255,.78);
+      line-height:1.45;
+      font-weight:650;
+    }
+    .desc b{color: rgba(255,255,255,.95)}
+    .desc .gold{color: rgba(255,213,74,.95); font-weight:900}
+    .desc .warn{color: rgba(255,59,92,.95); font-weight:900}
+    .final{
+      margin:10px 0 14px;
+      padding:12px 12px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.22);
+      font-weight:800;
+      color: rgba(255,255,255,.86);
+      line-height:1.55;
+    }
+    .final .gold{color: rgba(255,213,74,.95); font-weight:950}
+    .actions{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:space-between;
+      align-items:center;
+    }
+    .actions .left{display:flex; gap:10px; flex-wrap:wrap}
+    .note{
+      color: rgba(255,255,255,.58);
+      font-size:12px;
+      font-weight:650;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="hud">
+        <div class="pill"><span>TIME</span> <b id="timeText">30.0</b></div>
+        <div class="pill"><span>SCORE</span> <b id="scoreText">0</b></div>
+        <div class="pill"><span>BEST</span> <b id="bestText">0</b></div>
+        <div class="pill"><span>DIFF</span> <b id="diffText">EASY</b></div>
+      </div>
+
+      <div class="btns">
+        <div class="diff" aria-label="difficulty">
+          <div class="chip is-on" data-diff="EASY">EASY</div>
+          <div class="chip" data-diff="NORMAL">NORMAL</div>
+          <div class="chip" data-diff="HARD">HARD</div>
+          <div class="hint" id="diffHint">EASY: 코인/장애물 기본 속도</div>
+        </div>
+        <button id="resetBtn" title="R 키로도 가능">RESET</button>
+        <button id="resetBestBtn">RESET BEST</button>
+      </div>
+    </div>
+
+    <div class="stage">
+      <canvas id="game" width="960" height="540"></canvas>
+
+      <div class="overlay" id="overlay">
+        <div class="card">
+          <div class="title">
+            <span class="badge">XGP CROSSBOW RANGE</span>
+            <span id="ovTitle">XGP 석궁 미니게임</span>
+          </div>
+          <p class="desc" id="ovDesc"></p>
+          <div class="final" id="ovFinal" style="display:none"></div>
+          <div class="actions">
+            <div class="left">
+              <button id="startBtn">START</button>
+              <button id="resetBtn2">CLOSE</button>
+            </div>
+            <div class="note">조작: 드래그/마우스 이동으로 조준 → 떼면 발사 / Space 발사 / R 리셋</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ===== DOM =====
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+
+  const timeText = document.getElementById("timeText");
+  const scoreText = document.getElementById("scoreText");
+  const bestText = document.getElementById("bestText");
+  const diffText = document.getElementById("diffText");
+
+  const overlay = document.getElementById("overlay");
+  const startBtn = document.getElementById("startBtn");
+  const resetBestBtn = document.getElementById("resetBestBtn");
+  const resetBtn = document.getElementById("resetBtn");
+  const resetBtn2 = document.getElementById("resetBtn2");
+
+  const ovTitle = document.getElementById("ovTitle");
+  const ovDesc = document.getElementById("ovDesc");
+  const ovFinal = document.getElementById("ovFinal");
+
+  const diffHint = document.getElementById("diffHint");
+  const diffButtons = [...document.querySelectorAll(".chip")];
+
+  // ===== Utils =====
+  const W = canvas.width;
+  const H = canvas.height;
+
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  // playfield
+  const TOP = 88;
+  const BOTTOM = H - 108;
+  const LEFT = 26;
+  const RIGHT = W - 26;
+
+  // ===== Audio (no files) =====
+  let audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  }
+  function beep({ type="square", f0=700, f1=420, dur=0.08, gain=0.06, curve="exp" }) {
+    try {
+      ensureAudio();
+      if (!audioCtx) return;
+      const t = audioCtx.currentTime;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type;
+
+      o.frequency.setValueAtTime(f0, t);
+      if (curve === "exp") o.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
+      else o.frequency.linearRampToValueAtTime(f1, t + dur);
+
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(gain, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(t); o.stop(t + dur + 0.02);
+    } catch {}
+  }
+  const sfx = {
+    shoot() { beep({ type:"square", f0:720, f1:280, dur:0.07, gain:0.05 }); },
+    hit()   { beep({ type:"triangle", f0:980, f1:560, dur:0.09, gain:0.06 }); },
+    crit()  { beep({ type:"sawtooth", f0:1500, f1:740, dur:0.11, gain:0.065 }); },
+    boom()  { beep({ type:"sawtooth", f0:220, f1:65, dur:0.15, gain:0.075, curve:"lin" }); },
+    timeup(){ beep({ type:"triangle", f0:420, f1:140, dur:0.19, gain:0.06 }); },
+  };
+
+  // ===== Difficulty =====
+  const DIFF = {
+    EASY:   { coins: 3, hazards: 4, move: 1.00, wind: 0.0, arrowCd: 190, bonus: 1.00, time: 30 },
+    NORMAL: { coins: 4, hazards: 6, move: 1.25, wind: 1.0, arrowCd: 230, bonus: 1.08, time: 30 },
+    HARD:   { coins: 5, hazards: 8, move: 1.50, wind: 1.8, arrowCd: 280, bonus: 1.15, time: 30 },
+  };
+  const DIFF_HINTS = {
+    EASY:   "EASY: 기본 속도",
+    NORMAL: "NORMAL: 더 빠름 + 바람",
+    HARD:   "HARD: 매우 빠름 + 강한 바람",
+  };
+
+  let difficulty = "EASY";
+  function setDifficulty(d) {
+    difficulty = d;
+    diffButtons.forEach(b => b.classList.toggle("is-on", b.dataset.diff === d));
+    diffHint.textContent = DIFF_HINTS[d] || "";
+    diffText.textContent = d;
+  }
+  diffButtons.forEach(btn => btn.addEventListener("click", () => setDifficulty(btn.dataset.diff)));
+  setDifficulty("EASY");
+
+  // ===== Best =====
+  const BEST_KEY = "xgp_crossbow_best_v6";
+  let best = Number(localStorage.getItem(BEST_KEY) || 0);
+
+  // ===== Assets (embedded SVG images) =====
+  function svgToImg(svg) {
+    const img = new Image();
+    img.decoding = "async";
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg.trim());
+    return img;
+  }
+
+  // 석궁(크로스보우) - 캔버스에 고퀄 느낌으로 보이게 만든 SVG
+  const crossbowImg = svgToImg(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="560" height="320" viewBox="0 0 560 320">
+    <defs>
+      <linearGradient id="wood" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#7a4a23"/>
+        <stop offset="0.5" stop-color="#5f3416"/>
+        <stop offset="1" stop-color="#2b1408"/>
+      </linearGradient>
+      <linearGradient id="metal" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#f0f3f7"/>
+        <stop offset="0.25" stop-color="#9aa8b8"/>
+        <stop offset="0.6" stop-color="#e6eef7"/>
+        <stop offset="1" stop-color="#5c6a7a"/>
+      </linearGradient>
+      <radialGradient id="glow" cx="35%" cy="35%" r="80%">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.65"/>
+        <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.18"/>
+        <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+      </radialGradient>
+      <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+        <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#000" flood-opacity="0.45"/>
+      </filter>
+    </defs>
+
+    <g filter="url(#shadow)" transform="translate(20,20)">
+      <!-- stock -->
+      <path d="M220 195 C180 240,165 270,180 285 C205 305,250 280,280 250 C312 218,326 202,350 200
+               C375 198,395 214,410 210 C430 205,450 185,445 165
+               C438 140,400 135,380 150 C360 165,340 160,320 142
+               C290 115,252 135,240 150 C232 160,231 178,220 195 Z"
+            fill="url(#wood)" stroke="#1b0d06" stroke-width="6" />
+      <!-- wood highlights -->
+      <path d="M245 215 C215 250,205 272,215 282 C235 296,265 275,290 250" fill="none" stroke="#c88954" stroke-opacity="0.35" stroke-width="8" stroke-linecap="round"/>
+      <path d="M330 170 C350 190,382 192,408 174" fill="none" stroke="#e2b083" stroke-opacity="0.22" stroke-width="7" stroke-linecap="round"/>
+
+      <!-- metal rail -->
+      <path d="M270 86 L440 160 L418 190 L246 118 Z"
+            fill="url(#metal)" stroke="#2b3440" stroke-width="6" />
+      <path d="M280 98 L420 166" stroke="#ffffff" stroke-opacity="0.28" stroke-width="8" stroke-linecap="round"/>
+
+      <!-- trigger block -->
+      <rect x="265" y="132" width="62" height="56" rx="10" fill="#2b3440" stroke="#141a22" stroke-width="6"/>
+      <path d="M300 170 C295 190,305 205,324 210" fill="none" stroke="#0c1016" stroke-width="8" stroke-linecap="round"/>
+
+      <!-- bow limbs -->
+      <path d="M90 70 C175 65,235 92,260 110" fill="none" stroke="#2a2a2a" stroke-width="22" stroke-linecap="round"/>
+      <path d="M90 70 C175 65,235 92,260 110" fill="none" stroke="url(#metal)" stroke-opacity="0.55" stroke-width="10" stroke-linecap="round"/>
+
+      <path d="M110 240 C185 210,230 165,260 110" fill="none" stroke="#2a2a2a" stroke-width="22" stroke-linecap="round"/>
+      <path d="M110 240 C185 210,230 165,260 110" fill="none" stroke="url(#metal)" stroke-opacity="0.55" stroke-width="10" stroke-linecap="round"/>
+
+      <!-- string -->
+      <path d="M96 70 L114 240" stroke="#f6f7fb" stroke-opacity="0.82" stroke-width="4" stroke-linecap="round"/>
+      <path d="M96 70 L114 240" stroke="#000" stroke-opacity="0.18" stroke-width="7" stroke-linecap="round"/>
+
+      <!-- bolt -->
+      <path d="M250 112 L458 182" stroke="#fff3d7" stroke-width="8" stroke-linecap="round"/>
+      <path d="M450 180 L490 195" stroke="#2ef2c2" stroke-width="10" stroke-linecap="round"/>
+      <path d="M462 186 L505 172 L505 214 Z" fill="#ffd54a" stroke="#8a4f00" stroke-width="6"/>
+
+      <!-- light sheen -->
+      <ellipse cx="320" cy="140" rx="210" ry="160" fill="url(#glow)"/>
+    </g>
+  </svg>`);
+
+  // 별 모양(요청한 느낌) - 코인/크리티컬에 쓰는 별 하이라이트 모양
+  const starImg = svgToImg(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+    <defs>
+      <radialGradient id="g" cx="35%" cy="30%" r="80%">
+        <stop offset="0" stop-color="#fff8da"/>
+        <stop offset="0.38" stop-color="#ffd54a"/>
+        <stop offset="1" stop-color="#f7b200"/>
+      </radialGradient>
+      <filter id="s" x="-30%" y="-30%" width="160%" height="160%">
+        <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000" flood-opacity="0.35"/>
+      </filter>
+    </defs>
+    <g filter="url(#s)">
+      <path d="M64 10 L77 46 L116 46 L84 68 L96 106 L64 84 L32 106 L44 68 L12 46 L51 46 Z"
+            fill="url(#g)" stroke="#fff1b8" stroke-opacity="0.85" stroke-width="4" />
+      <path d="M50 44 C58 32,78 32,86 44" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="6" stroke-linecap="round"/>
+    </g>
+  </svg>`);
+
+  // ===== Game State =====
+  let running = false;
+  let lastTs = 0;
+
+  let elapsed = 0;
+  let score = 0;
+  let remaining = DIFF[difficulty].time;
+
+  const player = { x: W / 2, y: H - 92, r: 18 };
+  const aim = { angle: -Math.PI / 2, smooth: -Math.PI / 2 };
+
+  let arrows = [];
+  let coins = [];
+  let hazards = [];
+  let particles = [];
+  let popups = [];
+
+  let arrowCooldown = 0;
+
+  // camera FX
+  let shakeT = 0;
+  let shakePow = 0;
+
+  // ===== Helpers =====
+  function rnd(min, max) { return min + Math.random() * (max - min); }
+
+  function drawRoundedRect(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function canvasToLocal(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = (clientX - rect.left) / rect.width;
+    const sy = (clientY - rect.top) / rect.height;
+    return { x: sx * W, y: sy * H };
+  }
+
+  function updateAimFromPointer(clientX, clientY) {
+    const p = canvasToLocal(clientX, clientY);
+    const dx = p.x - player.x;
+    const dy = p.y - player.y;
+    if (dy > 0) return; // 아래쪽 조준 금지
+    aim.angle = Math.atan2(dy, dx);
+    aim.angle = clamp(aim.angle, -Math.PI + 0.26, -0.23);
+  }
+
+  function addShake(pow, t=0.16){
+    shakePow = Math.max(shakePow, pow);
+    shakeT = Math.max(shakeT, t);
+  }
+
+  // ===== FX =====
+  function burst(x, y, n, kind) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 90 + Math.random() * 240;
+      const size = 2 + Math.random() * 3;
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        life: 0.35 + Math.random() * 0.55,
+        t: 0,
+        kind,
+        size,
+        spin: rnd(-8, 8),
+        rot: rnd(0, Math.PI*2),
+      });
+    }
+  }
+
+  function ring(x,y,r0, kind){
+    particles.push({
+      x,y, vx:0, vy:0,
+      life: 0.45, t:0,
+      kind: kind+"_ring",
+      r0
+    });
+  }
+
+  function addPopup(x, y, text, isCrit, colorKind = "gold") {
+    popups.push({
+      x, y,
+      vy: -90 - Math.random() * 45,
+      t: 0,
+      life: 0.9,
+      text,
+      isCrit,
+      colorKind,
+      wob: Math.random()*10
+    });
+  }
+
+  // ===== Draw Helpers (high-quality style) =====
+  function drawVignette(){
+    const g = ctx.createRadialGradient(W*0.5, H*0.45, 80, W*0.5, H*0.5, Math.max(W,H)*0.75);
+    g.addColorStop(0, "rgba(0,0,0,0)");
+    g.addColorStop(0.55, "rgba(0,0,0,0.10)");
+    g.addColorStop(1, "rgba(0,0,0,0.58)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  function drawBackground(t){
+    // sky
+    const sky = ctx.createLinearGradient(0,0,0,H);
+    sky.addColorStop(0, "#6fb3ff");
+    sky.addColorStop(0.22, "#97d5ff");
+    sky.addColorStop(0.50, "#7cc7ff");
+    sky.addColorStop(1, "#1b2436");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0,0,W,H);
+
+    // far haze
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.fillRect(0, 0, W, H);
+
+    // castle walls (left/right)
+    function wall(side){
+      const x0 = side==="L" ? -20 : W-200;
+      const w = 240;
+      ctx.save();
+      ctx.translate(x0, 40);
+      // stone gradient
+      const g = ctx.createLinearGradient(0,0,w,0);
+      g.addColorStop(0, side==="L" ? "#3a3f46" : "#4a4f56");
+      g.addColorStop(1, side==="L" ? "#21252b" : "#2a2e35");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.roundRect(0, 0, w, H-80, 18);
+      ctx.fill();
+
+      // bricks
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      for(let yy=18; yy<H-120; yy+=22){
+        for(let xx=10; xx<w-10; xx+=46){
+          const off = ((yy/22)|0)%2 ? 18 : 0;
+          ctx.fillRect(xx+off, yy, 38, 10);
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      // vines
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = "rgba(86,170,88,0.55)";
+      for(let i=0;i<14;i++){
+        const vx = rnd(22, w-22);
+        const vy = rnd(30, H-190);
+        const r = rnd(10, 22);
+        ctx.beginPath();
+        ctx.ellipse(vx, vy, r*1.1, r*0.7, rnd(-1,1), 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    wall("L"); wall("R");
+
+    // ground base
+    const ground = ctx.createLinearGradient(0,H*0.52,0,H);
+    ground.addColorStop(0, "#2d7f42");
+    ground.addColorStop(0.6, "#1f5e33");
+    ground.addColorStop(1, "#143b22");
+    ctx.fillStyle = ground;
+    ctx.fillRect(0, H*0.52, W, H*0.48);
+
+    // path (cobblestone)
+    ctx.save();
+    ctx.translate(W*0.5, H*0.56);
+    ctx.beginPath();
+    ctx.moveTo(-110, H*0.42);
+    ctx.lineTo(110, H*0.42);
+    ctx.lineTo(200, -40);
+    ctx.lineTo(-200, -40);
+    ctx.closePath();
+
+    const p = ctx.createLinearGradient(0,-70,0,H*0.45);
+    p.addColorStop(0, "rgba(120,110,98,0.95)");
+    p.addColorStop(0.6, "rgba(78,72,66,0.96)");
+    p.addColorStop(1, "rgba(40,36,34,0.98)");
+    ctx.fillStyle = p;
+    ctx.fill();
+
+    // stones
+    ctx.clip();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    for(let i=0;i<140;i++){
+      const x = rnd(-190,190);
+      const y = rnd(-50, H*0.40);
+      const w = rnd(16, 34);
+      const h = rnd(10, 22);
+      ctx.fillRect(x, y, w, h);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // wooden target stand + targets (decor)
+    ctx.save();
+    ctx.translate(W*0.5, H*0.21);
+    const sway = Math.sin(t*0.7)*1.2;
+    ctx.rotate(sway*0.002);
+
+    // posts
+    ctx.lineWidth = 10;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(114,65,28,0.95)";
+    ctx.beginPath();
+    ctx.moveTo(-210, 140); ctx.lineTo(-210, -30);
+    ctx.moveTo( 210, 140); ctx.lineTo( 210, -30);
+    ctx.stroke();
+
+    // cross beams
+    ctx.lineWidth = 12;
+    ctx.strokeStyle = "rgba(86,49,20,0.95)";
+    ctx.beginPath();
+    ctx.moveTo(-210, 35); ctx.lineTo(210, 35);
+    ctx.moveTo(-210, 85); ctx.lineTo(210, 85);
+    ctx.stroke();
+
+    // targets
+    function drawTarget(x,y,s){
+      ctx.save();
+      ctx.translate(x,y);
+      ctx.scale(s,s);
+      ctx.shadowColor = "rgba(0,0,0,0.35)";
+      ctx.shadowBlur = 10;
+      const rings = [
+        ["#ffffff", 36],
+        ["#ff3b5c", 28],
+        ["#ffffff", 20],
+        ["#ff3b5c", 12],
+        ["#ffd54a", 6],
+      ];
+      for(const [c,r] of rings){
+        ctx.fillStyle = c;
+        ctx.beginPath();
+        ctx.arc(0,0,r,0,Math.PI*2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "rgba(0,0,0,0.25)";
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0,0,36,0,Math.PI*2); ctx.stroke();
+      ctx.restore();
+    }
+    const xs = [-120, 0, 120, -60, 60, 0];
+    const ys = [ 35, 35, 35,  85, 85, 85];
+    for(let i=0;i<6;i++){
+      drawTarget(xs[i], ys[i], 0.9);
+    }
+    ctx.restore();
+
+    // subtle foreground grass blades
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(0, H-90, W, 90);
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    for(let i=0;i<120;i++){
+      const x = (i*29) % W;
+      const y = H - rnd(18, 88);
+      ctx.fillRect(x, y, 2, rnd(8, 18));
+    }
+    ctx.restore();
+  }
+
+  // ===== Draw: "XGP" 대신 별 엠블럼 코인 =====
+  function drawStarCoin(x, y, r, spinT = 0) {
+    const wobble = 0.78 + 0.22 * Math.sin(spinT * Math.PI * 2);
+    const rx = r * wobble;
+    const ry = r;
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    // soft shadow
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.beginPath();
+    ctx.ellipse(4, 7, rx * 1.05, ry * 0.82, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // rim
+    const g = ctx.createRadialGradient(-rx * 0.35, -ry * 0.35, r * 0.12, 0, 0, r * 1.35);
+    g.addColorStop(0, "rgba(255,252,225,0.98)");
+    g.addColorStop(0.35, "rgba(255,213,74,0.98)");
+    g.addColorStop(0.78, "rgba(255,165,0,0.98)");
+    g.addColorStop(1, "rgba(145,70,0,0.98)");
+    ctx.fillStyle = g;
+    ctx.strokeStyle = "rgba(255,245,210,0.65)";
+    ctx.lineWidth = Math.max(2, r * 0.12);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // inner plate
+    const g2 = ctx.createRadialGradient(-rx * 0.18, -ry * 0.18, r * 0.08, 0, 0, r * 0.95);
+    g2.addColorStop(0, "rgba(255,255,238,0.98)");
+    g2.addColorStop(1, "rgba(255,190,20,0.98)");
+    ctx.fillStyle = g2;
+    ctx.strokeStyle = "rgba(70,30,0,0.32)";
+    ctx.lineWidth = Math.max(1, r * 0.06);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx * 0.62, ry * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // rim dots
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = "rgba(255,245,215,0.85)";
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      ctx.fillRect(Math.cos(a) * rx * 0.78 - 1, Math.sin(a) * ry * 0.78 - 1, 2, 2);
+    }
+    ctx.restore();
+
+    // sparkle stripe
+    ctx.save();
+    ctx.globalAlpha = 0.16 + 0.25 * (0.5 + 0.5 * Math.sin(spinT * Math.PI * 2));
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.beginPath();
+    ctx.ellipse(-rx * 0.22, -ry * 0.22, rx * 0.20, ry * 0.62, -0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // star emblem (use loaded star img)
+    const s = r * 1.08;
+    if (starImg.complete && starImg.naturalWidth) {
+      ctx.save();
+      ctx.globalAlpha = 0.92;
+      ctx.drawImage(starImg, -s/2, -s/2, s, s);
+      ctx.restore();
+    } else {
+      // fallback simple star
+      ctx.save();
+      ctx.globalAlpha = 0.92;
+      ctx.fillStyle = "rgba(255,213,74,0.95)";
+      ctx.beginPath();
+      const spikes = 5, outer = r*0.46, inner = r*0.22;
+      for(let i=0;i<spikes*2;i++){
+        const ang = i*Math.PI/spikes - Math.PI/2;
+        const rr = (i%2===0) ? outer : inner;
+        ctx.lineTo(Math.cos(ang)*rr, Math.sin(ang)*rr);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // ===== Draw: 고퀄 위험 표시 (네온 글로우 + 스컬/엑스 느낌) =====
+  function drawHazard(x, y, r, blinkT) {
+    const blink = 0.55 + 0.45 * Math.sin(blinkT * Math.PI * 2);
+    ctx.save();
+    ctx.translate(x, y);
+
+    // outer glow
+    const glow = ctx.createRadialGradient(0,0, r*0.2, 0,0, r*2.0);
+    glow.addColorStop(0, `rgba(255,59,92,${0.55*blink})`);
+    glow.addColorStop(0.35, `rgba(255,59,92,${0.22*blink})`);
+    glow.addColorStop(1, "rgba(255,59,92,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0,0,r*2.0,0,Math.PI*2);
+    ctx.fill();
+
+    // body (warning badge)
+    ctx.shadowColor = "rgba(0,0,0,0.35)";
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = "rgba(255,59,92,0.95)";
+    ctx.strokeStyle = "rgba(255,240,242,0.80)";
+    ctx.lineWidth = 4;
+
+    // rounded triangle
+    ctx.beginPath();
+    const A = -Math.PI/2;
+    const pts = [];
+    for(let i=0;i<3;i++){
+      const ang = A + i*(Math.PI*2/3);
+      pts.push([Math.cos(ang)*r, Math.sin(ang)*r]);
+    }
+    // smooth corners
+    const k = 0.22;
+    ctx.moveTo(lerp(pts[0][0], pts[1][0], k), lerp(pts[0][1], pts[1][1], k));
+    for(let i=0;i<3;i++){
+      const p0 = pts[i];
+      const p1 = pts[(i+1)%3];
+      const p2 = pts[(i+2)%3];
+      const a1x = lerp(p1[0], p0[0], k);
+      const a1y = lerp(p1[1], p0[1], k);
+      const a2x = lerp(p1[0], p2[0], k);
+      const a2y = lerp(p1[1], p2[1], k);
+      ctx.lineTo(a1x, a1y);
+      ctx.quadraticCurveTo(p1[0], p1[1], a2x, a2y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // inner dark plate
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = "rgba(18,22,34,0.62)";
+    ctx.beginPath();
+    ctx.arc(0, r*0.12, r*0.44, 0, Math.PI*2);
+    ctx.fill();
+
+    // skull-ish icon (simple)
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.beginPath();
+    ctx.arc(0, r*0.05, r*0.22, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillRect(-r*0.14, r*0.18, r*0.28, r*0.16);
+
+    ctx.fillStyle = "rgba(18,22,34,0.90)";
+    ctx.beginPath();
+    ctx.arc(-r*0.07, r*0.03, r*0.05, 0, Math.PI*2);
+    ctx.arc( r*0.07, r*0.03, r*0.05, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillRect(-r*0.06, r*0.12, r*0.12, r*0.04);
+
+    // blink outline accent
+    ctx.globalAlpha = 0.35 + 0.35*blink;
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, r*0.94, 0, Math.PI*2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // ===== Collisions =====
+  function hitCircle(ax, ay, bx, by, br) {
+    const dx = ax - bx;
+    const dy = ay - by;
+    return (dx * dx + dy * dy) <= (br * br);
+  }
+
+  // ===== Spawn =====
+  function spawnEntities() {
+    const cfg = DIFF[difficulty];
+    coins = [];
+    hazards = [];
+
+    // coins
+    for (let i = 0; i < cfg.coins; i++) {
+      const r = 18 + i * 1.4;
+      const points = i === cfg.coins - 1 ? 55 : (i === 0 ? 12 : 28);
+      const core = 10 + i * 0.8;
+      coins.push({
+        x: rnd(LEFT + r, RIGHT - r),
+        y: rnd(TOP + r, BOTTOM - 190),
+        r,
+        core,
+        points,
+        vx: rnd(-130, 130) * cfg.move,
+        vy: rnd(-100, 100) * cfg.move,
+        spin: Math.random(),
+        bob: Math.random()*10
+      });
+    }
+
+    // hazards
+    for (let i = 0; i < cfg.hazards; i++) {
+      const r = 16 + (i % 3);
+      hazards.push({
+        x: rnd(LEFT + r, RIGHT - r),
+        y: rnd(TOP + r, BOTTOM - 150),
+        r,
+        vx: rnd(-170, 170) * cfg.move,
+        vy: rnd(-140, 140) * cfg.move,
+        blink: Math.random(),
+      });
+    }
+  }
+
+  // ===== Shooting =====
+  function shoot() {
+    if (!running) return;
+    if (arrowCooldown > 0) return;
+
+    const power = 1600; // 항상 강함
+    let angle = aim.smooth;
+    angle = clamp(angle, -Math.PI + 0.26, -0.23);
+
+    const sp = power;
+    const ax = Math.cos(angle);
+    const ay = Math.sin(angle);
+
+    arrows.push({
+      x: player.x + ax * 18,
+      y: player.y + ay * 18,
+      vx: ax * sp,
+      vy: ay * sp,
+      rot: angle,
+      alive: true,
+      trail: [],
+    });
+
+    arrowCooldown = DIFF[difficulty].arrowCd;
+    sfx.shoot();
+  }
+
+  // ===== Game Flow =====
+  function showStartOverlay() {
+    ovTitle.textContent = "XGP 석궁 미니게임";
+    ovDesc.innerHTML =
+      `파워는 자동(항상 강함)이고 <b>조준만</b> 하면 됩니다.<br/>
+       <span class="gold">별 코인</span>을 맞추면 점수! 중앙(<b>별 엠블럼</b>)을 맞추면 <span class="gold">크리티컬</span>!<br/>
+       <span class="warn">⚠️ 위험 표식</span>을 맞추면 즉시 게임 오버!`;
+    ovFinal.style.display = "none";
+    startBtn.textContent = "START";
+    overlay.style.display = "flex";
+  }
+
+  function gameOver(reason) {
+    running = false;
+
+    if (reason === "TIME") sfx.timeup();
+    else sfx.boom();
+
+    const rText = reason === "TIME" ? "시간 종료!" : "⚠️ 위험 표식을 맞췄습니다!";
+    ovTitle.textContent = "GAME OVER";
+    ovDesc.innerHTML =
+      `<span class="warn">${rText}</span><br/>
+       최종 점수와 최고기록을 확인하세요.`;
+
+    ovFinal.style.display = "block";
+    ovFinal.innerHTML =
+      `최종 점수: <span class="gold">${score}</span><br/>` +
+      `최고 기록: <span class="gold">${best}</span>`;
+
+    startBtn.textContent = "RETRY";
+    overlay.style.display = "flex";
+  }
+
+  function startRound() {
+    ensureAudio();
+    running = true;
+    lastTs = performance.now();
+
+    elapsed = 0;
+    score = 0;
+    remaining = DIFF[difficulty].time;
+
+    arrows = [];
+    particles = [];
+    popups = [];
+    arrowCooldown = 0;
+
+    shakeT = 0; shakePow = 0;
+
+    spawnEntities();
+    updateHud();
+    overlay.style.display = "none";
+    requestAnimationFrame(loop);
+  }
+
+  function resetRoundToOverlay() {
+    running = false;
+    showStartOverlay();
+  }
+
+  function updateHud() {
+    timeText.textContent = remaining.toFixed(1);
+    scoreText.textContent = String(score);
+    bestText.textContent = String(best);
+  }
+
+  // ===== Input =====
+  canvas.addEventListener("pointerdown", (e) => {
+    ensureAudio();
+    updateAimFromPointer(e.clientX, e.clientY);
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove", (e) => updateAimFromPointer(e.clientX, e.clientY));
+  canvas.addEventListener("pointerup", () => shoot());
+
+  const keys = new Set();
+  window.addEventListener("keydown", (e) => {
+    if (["ArrowLeft","ArrowRight"," ","Space"].includes(e.key)) e.preventDefault();
+    keys.add(e.key);
+
+    if (e.key === " " || e.key === "Space") shoot();
+    if (e.key === "r" || e.key === "R") resetRoundToOverlay();
+  });
+  window.addEventListener("keyup", (e) => keys.delete(e.key));
+
+  // ===== UI =====
+  startBtn.addEventListener("click", () => startRound());
+  resetBtn.addEventListener("click", () => resetRoundToOverlay());
+  resetBtn2.addEventListener("click", () => resetRoundToOverlay());
+
+  resetBestBtn.addEventListener("click", () => {
+    localStorage.removeItem(BEST_KEY);
+    best = 0;
+    bestText.textContent = "0";
+  });
+
+  // ===== Loop =====
+  function loop(ts) {
+    if (!running) return;
+
+    const dtMs = clamp(ts - lastTs, 0, 34);
+    const dt = dtMs / 1000;
+    lastTs = ts;
+
+    update(dt, dtMs);
+    render();
+
+    requestAnimationFrame(loop);
+  }
+
+  function update(dt, dtMs) {
+    elapsed += dt;
+    remaining = Math.max(0, DIFF[difficulty].time - elapsed);
+
+    if (remaining <= 0) {
+      if (score > best) {
+        best = score;
+        localStorage.setItem(BEST_KEY, String(best));
+      }
+      updateHud();
+      gameOver("TIME");
+      return;
+    }
+
+    // aim smoothing (느낌 고급스럽게)
+    aim.smooth = lerp(aim.smooth, aim.angle, 1 - Math.pow(0.001, dt*60));
+    aim.smooth = clamp(aim.smooth, -Math.PI + 0.26, -0.23);
+
+    arrowCooldown = Math.max(0, arrowCooldown - dtMs);
+
+    // keyboard fine aim
+    const left = keys.has("ArrowLeft") || keys.has("a") || keys.has("A");
+    const right = keys.has("ArrowRight") || keys.has("d") || keys.has("D");
+    if (left) aim.angle -= dt * 1.9;
+    if (right) aim.angle += dt * 1.9;
+    aim.angle = clamp(aim.angle, -Math.PI + 0.26, -0.23);
+
+    const cfg = DIFF[difficulty];
+    const wind = cfg.wind;
+
+    // coins move & bounce
+    for (const c of coins) {
+      c.spin = (c.spin + dt * 0.9) % 1;
+      c.bob += dt * 2.4;
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+
+      if (c.x < LEFT + c.r) { c.x = LEFT + c.r; c.vx *= -1; }
+      if (c.x > RIGHT - c.r) { c.x = RIGHT - c.r; c.vx *= -1; }
+      if (c.y < TOP + c.r) { c.y = TOP + c.r; c.vy *= -1; }
+      if (c.y > BOTTOM - c.r) { c.y = BOTTOM - c.r; c.vy *= -1; }
+    }
+
+    // hazards move & bounce
+    for (const h of hazards) {
+      h.blink = (h.blink + dt * 1.5) % 1;
+      h.x += h.vx * dt;
+      h.y += h.vy * dt;
+
+      if (h.x < LEFT + h.r) { h.x = LEFT + h.r; h.vx *= -1; }
+      if (h.x > RIGHT - h.r) { h.x = RIGHT - h.r; h.vx *= -1; }
+      if (h.y < TOP + h.r) { h.y = TOP + h.r; h.vy *= -1; }
+      if (h.y > BOTTOM - h.r) { h.y = BOTTOM - h.r; h.vy *= -1; }
+    }
+
+    // camera shake decay
+    if (shakeT > 0) {
+      shakeT = Math.max(0, shakeT - dt);
+      shakePow = lerp(shakePow, 0, 1 - Math.pow(0.001, dt*60));
+    }
+
+    // arrows physics
+    const g = 820;
+    for (const ar of arrows) {
+      ar.vy += g * dt;
+      ar.vx += wind * dt * 38;
+
+      ar.x += ar.vx * dt;
+      ar.y += ar.vy * dt;
+
+      ar.rot = Math.atan2(ar.vy, ar.vx);
+
+      // trail
+      ar.trail.push([ar.x, ar.y]);
+      if (ar.trail.length > 10) ar.trail.shift();
+
+      if (ar.y > H + 90 || ar.x < -90 || ar.x > W + 90) ar.alive = false;
+      if (!ar.alive) continue;
+
+      // hit hazard -> GAME OVER
+      for (const h of hazards) {
+        if (hitCircle(ar.x, ar.y, h.x, h.y, h.r * 0.92)) {
+          ar.alive = false;
+          burst(h.x, h.y, 42, "red");
+          ring(h.x,h.y,h.r*1.6,"red");
+          addPopup(h.x, h.y - 6, "BOOM", true, "red");
+          addShake(10, 0.20);
+
+          if (score > best) {
+            best = score;
+            localStorage.setItem(BEST_KEY, String(best));
+          }
+          updateHud();
+          gameOver("HAZARD");
+          return;
+        }
+      }
+
+      // hit coin -> score
+      for (const c of coins) {
+        const cy = c.y + Math.sin(c.bob) * 2.5;
+        if (hitCircle(ar.x, ar.y, c.x, cy, c.r * 0.94)) {
+          ar.alive = false;
+
+          const crit = hitCircle(ar.x, ar.y, c.x, cy, c.core);
+          let add = c.points;
+          if (crit) add = Math.round(add * 2);
+          add = Math.round(add * cfg.bonus);
+
+          score += add;
+          if (score > best) {
+            best = score;
+            localStorage.setItem(BEST_KEY, String(best));
+          }
+
+          burst(c.x, cy, crit ? 34 : 20, crit ? "gold" : "mint");
+          ring(c.x,cy,c.r*(crit?1.9:1.5), crit ? "gold" : "mint");
+          addPopup(c.x, cy - 6, `+${add}`, crit, "gold");
+          addShake(crit ? 6 : 3, 0.12);
+
+          if (crit) sfx.crit(); else sfx.hit();
+
+          // coin reposition
+          c.x = rnd(LEFT + c.r, RIGHT - c.r);
+          c.y = rnd(TOP + c.r, BOTTOM - 190);
+          c.vx = rnd(-150, 150) * cfg.move;
+          c.vy = rnd(-120, 120) * cfg.move;
+          c.spin = Math.random();
+          c.bob = Math.random()*10;
+
+          break;
+        }
+      }
+    }
+    arrows = arrows.filter(a => a.alive);
+
+    // particles
+    for (const p of particles) {
+      p.t += dt;
+      if (p.kind.endsWith("_ring")) continue;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= (1 - dt * 2.0);
+      p.vy *= (1 - dt * 2.0);
+      p.rot += (p.spin || 0) * dt;
+    }
+    particles = particles.filter(p => p.t < p.life);
+
+    // popups
+    for (const s of popups) {
+      s.t += dt;
+      s.y += s.vy * dt;
+      s.vy *= (1 - dt * 2.1);
+      s.x += Math.sin((s.t*6)+s.wob) * 0.35;
+    }
+    popups = popups.filter(s => s.t < s.life);
+
+    updateHud();
+  }
+
+  // ===== Render =====
+  function render() {
+    const t = elapsed;
+
+    // camera transform (shake)
+    ctx.save();
+    if (shakeT > 0 && shakePow > 0.1) {
+      const s = shakePow * (shakeT / 0.20);
+      const ox = rnd(-1,1) * s;
+      const oy = rnd(-1,1) * s;
+      ctx.translate(ox, oy);
+    }
+
+    // background (medieval range vibe)
+    drawBackground(t);
+
+    // subtle playfield border
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,210,120,0.18)";
+    ctx.lineWidth = 2;
+    drawRoundedRect(LEFT, TOP, RIGHT - LEFT, BOTTOM - TOP, 18);
+    ctx.stroke();
+    ctx.restore();
+
+    // hazards
+    for (const h of hazards) {
+      drawHazard(h.x, h.y, h.r, h.blink);
+    }
+
+    // coins
+    for (const c of coins) {
+      const cy = c.y + Math.sin(c.bob) * 2.5;
+      drawStarCoin(c.x, cy, c.r, c.spin);
+      // tiny glow
+      ctx.save();
+      ctx.globalAlpha = 0.10;
+      const g = ctx.createRadialGradient(c.x, cy, c.r*0.2, c.x, cy, c.r*2.2);
+      g.addColorStop(0, "rgba(255,213,74,0.7)");
+      g.addColorStop(1, "rgba(255,213,74,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(c.x, cy, c.r*2.2, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+
+    // popups
+    for (const s of popups) {
+      const a = 1 - (s.t / s.life);
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.font = `14px system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillText(s.text, s.x + 1, s.y + 2);
+
+      if (s.colorKind === "red") ctx.fillStyle = "rgba(255,59,92,0.98)";
+      else ctx.fillStyle = s.isCrit ? "rgba(255,213,74,0.98)" : "rgba(255,248,225,0.95)";
+      ctx.fillText(s.text, s.x, s.y);
+
+      // crit sparkle
+      if (s.isCrit && starImg.complete && starImg.naturalWidth) {
+        ctx.globalAlpha = a * 0.85;
+        const sz = 22;
+        ctx.drawImage(starImg, s.x - sz/2, s.y - 30, sz, sz);
+      }
+      ctx.restore();
+    }
+
+    // arrows + trails
+    for (const ar of arrows) {
+      // trail
+      ctx.save();
+      for (let i=0;i<ar.trail.length;i++){
+        const p = ar.trail[i];
+        const alpha = (i / ar.trail.length) * 0.35;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "rgba(255,243,215,0.92)";
+        ctx.fillRect(p[0], p[1], 3, 3);
+      }
+      ctx.restore();
+
+      // arrow body
+      ctx.save();
+      ctx.translate(ar.x, ar.y);
+      ctx.rotate(ar.rot);
+
+      // shaft
+      ctx.fillStyle = "rgba(255,243,215,0.95)";
+      ctx.fillRect(-18, -2, 28, 4);
+
+      // head
+      ctx.fillStyle = "rgba(255,213,74,0.98)";
+      ctx.beginPath();
+      ctx.moveTo(12, 0);
+      ctx.lineTo(23, -7);
+      ctx.lineTo(23, 7);
+      ctx.closePath();
+      ctx.fill();
+
+      // fletching
+      ctx.fillStyle = "rgba(46,242,194,0.98)";
+      ctx.fillRect(-25, -6, 4, 12);
+
+      ctx.restore();
+    }
+
+    // particles (sparkles + rings)
+    for (const p of particles) {
+      const a = 1 - (p.t / p.life);
+      ctx.save();
+      ctx.globalAlpha = a;
+
+      if (p.kind.endsWith("_ring")) {
+        const k = p.t / p.life;
+        const rr = p.r0 * (0.7 + k*1.1);
+        ctx.lineWidth = 3;
+        if (p.kind.startsWith("gold")) ctx.strokeStyle = `rgba(255,213,74,${0.8*a})`;
+        else if (p.kind.startsWith("red")) ctx.strokeStyle = `rgba(255,59,92,${0.7*a})`;
+        else ctx.strokeStyle = `rgba(46,242,194,${0.7*a})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI*2); ctx.stroke();
+        ctx.restore();
+        continue;
+      }
+
+      if (p.kind === "gold") ctx.fillStyle = "rgba(255,213,74,0.95)";
+      else if (p.kind === "red") ctx.fillStyle = "rgba(255,59,92,0.90)";
+      else if (p.kind === "mint") ctx.fillStyle = "rgba(46,242,194,0.90)";
+      else ctx.fillStyle = "rgba(255,255,255,0.75)";
+
+      // sparkle squares
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot || 0);
+      const s = p.size || 3;
+      ctx.fillRect(-s/2, -s/2, s, s);
+      ctx.restore();
+    }
+
+    // player + crossbow
+    drawPlayerAndCrossbow();
+
+    drawVignette();
+    ctx.restore();
+  }
+
+  function drawPlayerAndCrossbow(){
+    // player base
+    ctx.save();
+    ctx.fillStyle = "rgba(46,242,194,0.18)";
+    ctx.strokeStyle = "rgba(46,242,194,0.55)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // aim guide
+    const ax = Math.cos(aim.smooth), ay = Math.sin(aim.smooth);
+    const bx = player.x + ax * 70;
+    const by = player.y + ay * 70;
+
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,213,74,0.90)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(player.x, player.y);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+
+    ctx.globalAlpha = 0.52;
+    ctx.strokeStyle = "rgba(255,243,215,0.40)";
+    ctx.setLineDash([7, 7]);
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx + ax * 280, by + ay * 280);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // crossbow image (higher quality feel)
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(aim.smooth);
+
+    // subtle shadow
+    ctx.globalAlpha = 0.26;
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.beginPath();
+    ctx.ellipse(24, 18, 72, 24, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    const scale = 0.32;
+    const iw = 560 * scale, ih = 320 * scale;
+
+    if (crossbowImg.complete && crossbowImg.naturalWidth) {
+      ctx.drawImage(crossbowImg, -iw*0.10, -ih*0.52, iw, ih);
+    } else {
+      // fallback: draw a simple bow line
+      ctx.strokeStyle = "rgba(255,213,74,0.92)";
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.moveTo(-10, 0);
+      ctx.lineTo(70, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ===== Init =====
+  bestText.textContent = String(best);
+  scoreText.textContent = "0";
+  timeText.textContent = String(DIFF[difficulty].time.toFixed(1));
+  showStartOverlay();
+
+  // Keep hint/diff text updated if user changes difficulty before start
+  diffButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (!running) timeText.textContent = String(DIFF[difficulty].time.toFixed(1));
+    });
+  });
+})();
+</script>
+</body>
+</html>
